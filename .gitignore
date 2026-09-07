@@ -1,0 +1,24 @@
+# dependencies
+/node_modules
+
+# next.js build output
+/.next/
+/out/
+
+# local database (SQLite file, don't commit real data)
+/data/*.db
+/data/*.db-shm
+/data/*.db-wal
+
+# env files (never commit real secrets)
+.env
+.env.local
+.env*.local
+
+# misc
+.DS_Store
+*.pem
+npm-debug.log*
+.vercel
+*.tsbuildinfo
+next-env.d.ts
