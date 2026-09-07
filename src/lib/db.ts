@@ -8,7 +8,7 @@ import { DEMO_MODE, DEMO_USER_ID, DEMO_EMAIL, DEMO_NAME } from "./demo";
 
 type DbResult<T> = { data: T | null; error: { message: string } | null; count?: number | null };
 
-type Filter = { column: string; value: string | number | boolean | null };
+type Filter = { column: string; op: "eq" | "gte"; value: string | number | boolean | null };
 
 type QueryState = {
   table: string;
@@ -47,7 +47,11 @@ function encodeFilterValue(value: Filter["value"]): string {
 
 function demoExecute<T>(state: QueryState): DbResult<T> {
   const rows = demoTables[state.table] || (demoTables[state.table] = []);
-  const matches = rows.filter((row) => state.filters.every((f) => row[f.column] === f.value));
+  const matches = rows.filter((row) =>
+    state.filters.every((f) =>
+      f.op === "gte" ? row[f.column] >= (f.value as any) : row[f.column] === f.value
+    )
+  );
   if (state.method === "POST") {
     const incoming = Array.isArray(state.body) ? state.body : [state.body];
     rows.push(...incoming.map((x) => ({ ...(x as any) })));
@@ -72,7 +76,7 @@ async function execute<T>(state: QueryState): Promise<DbResult<T>> {
     if (state.method === "GET") params.set("select", state.select || "*");
     if (state.order) params.set("order", `${state.order.column}.${state.order.ascending ? "asc" : "desc"}`);
     if (state.limit !== undefined) params.set("limit", String(state.limit));
-    for (const filter of state.filters) params.set(filter.column, `eq.${encodeFilterValue(filter.value)}`);
+    for (const filter of state.filters) params.set(filter.column, `${filter.op}.${encodeFilterValue(filter.value)}`);
 
     const headers: Record<string, string> = {
       apikey: serviceRoleKey!,
@@ -135,7 +139,8 @@ class QueryBuilder<T = unknown> implements PromiseLike<DbResult<T>> {
   }
   insert(body: unknown) { this.state.method = "POST"; this.state.body = body; return this; }
   update(body: unknown) { this.state.method = "PATCH"; this.state.body = body; return this; }
-  eq(column: string, value: string | number | boolean | null) { this.state.filters.push({ column, value }); return this; }
+  eq(column: string, value: string | number | boolean | null) { this.state.filters.push({ column, op: "eq", value }); return this; }
+  gte(column: string, value: string | number | boolean | null) { this.state.filters.push({ column, op: "gte", value }); return this; }
   order(column: string, options?: { ascending?: boolean }) { this.state.order = { column, ascending: options?.ascending !== false }; return this; }
   limit(value: number) { this.state.limit = value; return this; }
   maybeSingle() { this.state.single = true; return this; }
