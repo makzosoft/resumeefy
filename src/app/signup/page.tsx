@@ -8,6 +8,7 @@ function SignupInner() {
   const router = useRouter();
   const params = useSearchParams();
   const next = params.get("next") || "/assessment";
+  const affiliateSignup = params.get("affiliate") === "1";
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
