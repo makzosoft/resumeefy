@@ -278,7 +278,7 @@ function DesktopStep({ elapsed, targetRole, jobDescription, onDone, onBack }: { 
   const [taskScores, setTaskScores] = useState<number[]>([]);
   const [scenario, setScenario] = useState<any>(null);
   const [stage, setStage] = useState<"search" | "results" | "page">("search");
-  const [app, setApp] = useState<"browser" | "mail" | "sheets" | null>(null);
+  const [app, setApp] = useState<"browser" | "mail" | "sheets" | "notes" | "calc" | "bin" | null>(null);
   const [mail, setMail] = useState<"inbox" | "read" | "compose" | "sent">("inbox");
   const [copied, setCopied] = useState(false); const [sent, setSent] = useState(false); const [status, setStatus] = useState("Pending"); const [time, setTime] = useState(""); const [saved, setSaved] = useState(false); const [mistakes, setMistakes] = useState(0); const [decorative, setDecorative] = useState(0);
   useEffect(() => { let active=true; api<any>("/api/ai?action=desktop", {method:"POST", body:JSON.stringify({action:"desktop",targetRole,jobDescription:jobDescription||undefined})}).then(r=>{if(active){const next=r.tasks||[];setScenarios(next);setTaskScores([]);setTaskIndex(0);setScenario(next[0]||fallbackScenario)}}).catch(()=>{if(active){setScenarios([fallbackScenario,fallbackScenario,fallbackScenario]);setScenario(fallbackScenario)}}); return ()=>{active=false}; }, [targetRole, jobDescription, fallbackScenario]);
