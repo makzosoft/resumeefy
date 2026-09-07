@@ -16,7 +16,7 @@ const matchSchema=z.object({resume:z.record(z.string(),z.unknown()),jobDescripti
 async function charge(userId:string, amount:number, feature:string){
   try{return await spendCredits(userId,amount,feature)}catch(e){if(String(e).includes("INSUFFICIENT_CREDITS")) throw Object.assign(new Error("You have run out of credits. Buy a credit pack to continue."),{code:"INSUFFICIENT_CREDITS"});throw e;}
 }
-function fail(e:unknown){if(e && typeof e === "object" && "code" in e && (e as any).code === "INSUFFICIENT_CREDITS") return NextResponse.json({error:(e as Error).message,code:"INSUFFICIENT_CREDITS"},{status:402});return NextResponse.json({error:e instanceof Error?e.message:"AI request failed"},{status:502});}
+function fail(e:unknown){if(e && typeof e === "object" && "code" in e && (e as any).code === "INSUFFICIENT_CREDITS") return NextResponse.json({error:(e as { message?: string }).message,code:"INSUFFICIENT_CREDITS"},{status:402});return NextResponse.json({error:e instanceof Error?e.message:"AI request failed"},{status:502});}
 
 export async function POST(req:NextRequest){
   const body=await req.json().catch(()=>null) as Record<string,unknown>|null; const action=String(body?.action||req.nextUrl.searchParams.get("action")||"").toLowerCase();
