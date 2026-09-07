@@ -343,7 +343,7 @@ export async function createAffiliatePayoutRequest(userId: string, amount: numbe
   if (!affiliate || affiliate.status !== "active") throw new Error("Affiliate account is not active");
   const { data, error } = await db.from("affiliate_commissions").select("amount").eq("affiliate_id", affiliate.id).eq("currency", currency.toUpperCase()).eq("status", "pending");
   throwDb(error);
-  const available = (data ?? []).reduce((sum, row) => sum + Number(row.amount || 0), 0);
+  const available = (data ?? []).reduce((sum: number, row: any) => sum + Number(row.amount || 0), 0);
   if (amount <= 0 || amount > available) throw new Error(`Only ${available.toLocaleString()} ${currency.toUpperCase()} is currently available for payout`);
   const { error: insertError } = await db.from("affiliate_payout_requests").insert({ id: newId("payout"), affiliate_id: affiliate.id, amount, currency: currency.toUpperCase(), status: "requested" });
   throwDb(insertError);
