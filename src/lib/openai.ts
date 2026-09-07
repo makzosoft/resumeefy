@@ -26,7 +26,21 @@ async function responsesJson<T>(input: unknown, schema: JsonSchema, schemaName: 
       resumeefy_blog: { 
         title: "How to Prepare for Your Next Career Opportunity", 
         excerpt: "Practical steps for getting your application and interview readiness in shape.", 
-        content: "## Start with the role\n\nRead the job description carefully and identify the skills the employer actually needs.\n\n## Make your evidence easy to find\n\nUse clear examples from your real experience. Avoid adding claims you cannot support.\n\n## Practise before the interview\n\nA few realistic practice questions can reveal where your answers need more structure.\n\n## Keep improving\n\nTreat each application as feedback. Review what worked, improve what did not, and keep your materials aligned with the role.", 
+        content:`## Start with the role
+
+Read the job description carefully and identify the skills the employer actually needs.
+
+## Make your evidence easy to find
+
+Use clear examples from your real experience. Avoid adding claims you cannot support.
+
+## Practise before the interview
+
+A few realistic practice questions can reveal where your answers need more structure.
+
+## Keep improving
+
+Treat each application as feedback. Review what worked, improve what did not, and keep your materials aligned with the role.`, 
         topic: "career preparation", 
         coverType: "gradient", 
         slug: "demo-career-preparation", 
