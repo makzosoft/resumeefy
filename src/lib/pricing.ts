@@ -29,7 +29,7 @@ async function usdRates(): Promise<Record<string, number>> {
 
 export async function getLocalizedCreditPacks(country = "NG"): Promise<{ country: string; currency: string; symbol: string; rate: number; packs: LocalizedPack[]; isNigeria: boolean; pricingSource: string }> {
   const normalized = country.toUpperCase();
-  if (normalized === "NG") return { country: normalized, currency: "NGN", symbol: "₦", rate: 1, packs: CREDIT_PACKS, isNigeria: true, pricingSource: "Resumeefy Nigeria pricing" };
+  if (normalized === "NG") return { country: normalized, currency: "NGN", symbol: "₦", rate: 1, packs: [...CREDIT_PACKS], isNigeria: true, pricingSource: "Resumeefy Nigeria pricing" };
   const currency = COUNTRY_CURRENCY[normalized] && FLUTTERWAVE_CURRENCIES.has(COUNTRY_CURRENCY[normalized]) ? COUNTRY_CURRENCY[normalized] : "USD";
   const rates = await usdRates();
   const rate = Number(rates[currency] || 1);
