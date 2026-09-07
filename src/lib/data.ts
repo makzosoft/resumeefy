@@ -42,9 +42,14 @@ export async function getAdminStats() {
     db.from("daily_login_rewards").select("id,user_id,reward_date,credits,created_at").order("created_at", { ascending: false }).limit(1000),
   ]);
   [users, leads, assessments, payments, eventCounts, recentEvents, dailySignups, affiliates, affiliateCommissions, affiliatePayouts, referralLeads, blogPosts, blogEvents, userReferrals, dailyRewards].forEach((r) => throwDb(r.error));
-  const scores = (assessments.data ?? []).map((x) => Number(x.overall_score)).filter(Number.isFinite);
-  const revenue = (payments.data ?? []).reduce((sum, x) => sum + Number(x.amount || 0), 0);
-  const revenueByCurrency: Record<string, number> = {};
+  
+const scores = (assessments.data ?? []).map((x: any) => Number(x.overall_score)).filter(Number.isFinite);
+const revenue = (payments.data ?? []).reduce((sum: number, x: any) => sum + Number(x.amount || 0), 0);
+
+
+totalUsers: users.count ?? 0, totalLeads: leads.count ?? 0, totalAssessments: assessments.data?.length ?? 0, avgScore: scores.length ? Math.round(scores.reduce((a: number,b: number)=>a+b,0)/scores.length) : 0,
+totalRevenue: revenue, revenueByCurrency, successfulPayments: payments.data?.length ?? 0, affiliateRevenue: (affiliateCommissions.data ?? []).reduce((s: number,x: any)=>s+Number(x.amount||0),0),
+
   for (const row of payments.data ?? []) revenueByCurrency[row.currency] = (revenueByCurrency[row.currency] || 0) + Number(row.amount || 0);
   const counts = new Map<string, number>();
   for (const row of eventCounts.data ?? []) counts.set(row.name, (counts.get(row.name) ?? 0) + 1);
@@ -88,7 +93,7 @@ export async function saveAssessment(userId: string, scores: Record<string, numb
 export async function getUserAssessments(userId: string) {
   const { data, error } = await db.from("assessments").select("*").eq("user_id", userId).order("completed_at", { ascending: false });
   throwDb(error);
-  return (data ?? []).map((a) => ({ ...a, scores_json: JSON.stringify(a.scores_json ?? {}) }));
+  return (data ?? []).map((a: any) => ({ ...a, scores_json: JSON.stringify(a.scores_json ?? {}) }));
 }
 
 export async function upsertResume(userId: string, resumeId: string | null, data: Record<string, unknown>) {
