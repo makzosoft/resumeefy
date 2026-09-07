@@ -55,8 +55,8 @@ export async function getAdminStats() {
   const blogStats = new Map<string, { views: number; shares: number; ctas: number }>();
   for (const row of blogEvents.data ?? []) { const current = blogStats.get(row.blog_id) ?? { views: 0, shares: 0, ctas: 0 }; if (row.event === "view" || row.event === "read" || row.event === "blog_read" || row.event === "blog_open") current.views++; if (row.event === "share" || row.event === "blog_share") current.shares++; if (row.event === "cta_click" || row.event === "blog_cta_click") current.ctas++; blogStats.set(row.blog_id, current); }
   return {
-    totalUsers: users.count ?? 0, totalLeads: leads.count ?? 0, totalAssessments: assessments.data?.length ?? 0, avgScore: scores.length ? Math.round(scores.reduce((a,b)=>a+b,0)/scores.length) : 0,
-    totalRevenue: revenue, revenueByCurrency, successfulPayments: payments.data?.length ?? 0, affiliateRevenue: (affiliateCommissions.data ?? []).reduce((s,x)=>s+Number(x.amount||0),0),
+    totalUsers: users.count ?? 0, totalLeads: leads.count ?? 0, totalAssessments: assessments.data?.length ?? 0, avgScore: scores.length ? Math.round(scores.reduce((a: number, b: number) => a + b, 0) / scores.length) : 0,
+    totalRevenue: revenue, revenueByCurrency, successfulPayments: payments.data?.length ?? 0, affiliateRevenue: (affiliateCommissions.data ?? []).reduce((s: number, x: any) => s + Number(x.amount || 0), 0),
     affiliates: affiliates.data ?? [], affiliateCommissions: affiliateCommissions.data ?? [], affiliatePayouts: affiliatePayouts.data ?? [], referralLeads: referralLeads.data ?? [], userReferrals: userReferrals.data ?? [], dailyLoginRewards: dailyRewards.data ?? [],
     eventCounts: [...counts.entries()].map(([name,count])=>({name,count})).sort((a,b)=>b.count-a.count).slice(0,20),
     recentEvents: (recentEvents.data ?? []).map((e:any)=>({name:e.name,meta_json:JSON.stringify(e.meta_json??{}),created_at:e.created_at,email:Array.isArray(e.users)?e.users[0]?.email??null:(e.users as any)?.email??null,meta:e.meta_json??{}})),
