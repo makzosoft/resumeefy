@@ -3,6 +3,7 @@ import "./globals.css";
 import Nav from "@/components/Nav";
 import ReferralCapture from "@/components/ReferralCapture";
 import CreditGate from "@/components/CreditGate";
+import { SpeedInsights } from "@vercel/speed-insights/next";
 
 export const metadata: Metadata = {
   metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL || process.env.APP_URL || "https://resumeefy.com"),
@@ -30,6 +31,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <Nav />
         {children}
         <CreditGate />
+        <SpeedInsights />
       </body>
     </html>
   );
