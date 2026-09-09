@@ -4,6 +4,7 @@ import Nav from "@/components/Nav";
 import ReferralCapture from "@/components/ReferralCapture";
 import CreditGate from "@/components/CreditGate";
 import { SpeedInsights } from "@vercel/speed-insights/next";
+import { Analytics } from "@vercel/analytics/next";
 
 export const metadata: Metadata = {
   metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL || process.env.APP_URL || "https://resumeefy.com"),
@@ -32,6 +33,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         {children}
         <CreditGate />
         <SpeedInsights />
+        <Analytics />
       </body>
     </html>
   );
