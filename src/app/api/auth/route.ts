@@ -63,29 +63,74 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  
-if (action === "signup") {
-  // ... existing validation ...
-  try {
-    const result = await signUp(...);
-    // ... existing code ...
-  } catch (error) {
-    // Check if it's a duplicate email error
-    if (error instanceof Error && error.message.includes("already registered")) {
-      // Try to sign them in instead
-      try {
-        const loginResult = await signIn(parsed.data.email, parsed.data.password);
-        const session = await getCurrentSession();
-        // ... return session data ...
-      } catch {
-        return NextResponse.json({ 
-          error: "Account exists but password is incorrect. Please log in." 
-        }, { status: 409 });
+  if (action === "signup") {
+    const parsed = signupSchema.safeParse(body);
+    if (!parsed.success) return NextResponse.json({ error: parsed.error.issues[0].message }, { status: 400 });
+
+    try {
+      const result = await signUp(parsed.data.email, parsed.data.password, parsed.data.name);
+
+      if (!result.hasSession) {
+        const jar = await cookies();
+        const referralCode = jar.get("resumeefy_referral")?.value;
+        if (referralCode) await recordAffiliateLead(referralCode, parsed.data.email, result.user.id).catch(() => {});
+        const inviteCode = jar.get("resumeefy_invite")?.value;
+        if (inviteCode) await recordUserReferral(inviteCode, parsed.data.email, null).catch(() => {});
+        if (parsed.data.affiliateSignup) await createAffiliate(result.user.id, parsed.data.name).catch(() => {});
+        return NextResponse.json({
+          ok: true,
+          needsEmailConfirmation: true,
+          message: "Account created. Check your email to confirm your account, then sign in.",
+        });
       }
+
+      const session = await getCurrentSession();
+      if (!session) return NextResponse.json({ error: "Account profile is not ready" }, { status: 500 });
+
+      trackEvent("account_created", {
+        userId: session.sub,
+        meta: { email: parsed.data.email, affiliateSignup: Boolean(parsed.data.affiliateSignup) },
+      }).catch(() => {});
+
+      await attachReferral(session.sub, session.email);
+      if (parsed.data.affiliateSignup) await createAffiliate(session.sub, session.name);
+
+      return NextResponse.json({ id: session.sub, name: session.name, email: session.email, role: session.role });
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : "Unable to create account";
+      const lower = errorMessage.toLowerCase();
+
+      const isDuplicate =
+        lower.includes("already registered") ||
+        lower.includes("already exists") ||
+        lower.includes("duplicate") ||
+        lower.includes("user already");
+
+      if (isDuplicate) {
+        try {
+          await signIn(parsed.data.email, parsed.data.password);
+          const session = await getCurrentSession();
+          if (session) {
+            await attachReferral(session.sub, session.email);
+            return NextResponse.json({
+              id: session.sub,
+              name: session.name,
+              email: session.email,
+              role: session.role,
+            });
+          }
+        } catch {
+          // fall through to the generic duplicate message below
+        }
+        return NextResponse.json(
+          { error: "An account with this email already exists. Please log in instead." },
+          { status: 409 }
+        );
+      }
+
+      return NextResponse.json({ error: errorMessage }, { status: 409 });
     }
-    return NextResponse.json({ 
-      error: error instanceof Error ? error.message : "Unable to create account" 
-    }, { status: 409 });
   }
+
+  return NextResponse.json({ error: "Unknown auth action" }, { status: 400 });
 }
-  
