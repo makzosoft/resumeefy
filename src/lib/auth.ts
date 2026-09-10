@@ -37,9 +37,21 @@ export async function signIn(email: string, password: string) {
     method: "POST",
     body: JSON.stringify({ email, password }),
   });
-  const body = await response.json().catch(() => ({})) as SupabaseAuthResponse & { error_description?: string; msg?: string };
+  const body = await response.json().catch(() => ({})) as SupabaseAuthResponse & {
+    error_description?: string;
+    msg?: string;
+    error?: string;
+    message?: string;
+  };
   if (!response.ok || !body.access_token || !body.refresh_token || !body.user) {
-    throw new Error(body.error_description || body.msg || "Incorrect email or password");
+    const raw =
+      body.error_description ||
+      body.msg ||
+      body.error ||
+      body.message ||
+      `Supabase sign in failed (${response.status})`;
+    console.error("[signIn] supabase response:", response.status, body);
+    throw new Error(raw);
   }
   await setAuthCookies(body.access_token, body.refresh_token);
   return body.user;
@@ -51,8 +63,28 @@ export async function signUp(email: string, password: string, name: string) {
     method: "POST",
     body: JSON.stringify({ email, password, data: { name } }),
   });
-  const body = await response.json().catch(() => ({})) as SupabaseAuthResponse & { error_description?: string; msg?: string };
-  if (!response.ok || !body.user) throw new Error(body.error_description || body.msg || "Unable to create account");
+  const body = await response.json().catch(() => ({})) as SupabaseAuthResponse & {
+    error_description?: string;
+    msg?: string;
+    error?: string;
+    message?: string;
+    code?: string;
+    error_code?: string;
+  };
+
+  if (!response.ok || !body.user) {
+    const raw =
+      body.error_description ||
+      body.msg ||
+      body.error ||
+      body.message ||
+      body.code ||
+      body.error_code ||
+      `Supabase signup failed (${response.status})`;
+    console.error("[signUp] supabase response:", response.status, body);
+    throw new Error(raw);
+  }
+
   if (body.access_token && body.refresh_token) await setAuthCookies(body.access_token, body.refresh_token);
   return { user: body.user, hasSession: Boolean(body.access_token) };
 }
@@ -82,10 +114,24 @@ async function refreshSession(refreshToken: string) {
   return true;
 }
 
-async function setDemoCookie() { const jar=await cookies(); jar.set(ACCESS_COOKIE, DEMO_USER_ID, {httpOnly:true,secure:process.env.NODE_ENV==="production",sameSite:"lax",path:"/",maxAge:60*60*24*30}); }
+async function setDemoCookie() {
+  const jar = await cookies();
+  jar.set(ACCESS_COOKIE, DEMO_USER_ID, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "lax",
+    path: "/",
+    maxAge: 60 * 60 * 24 * 30,
+  });
+}
 
 export async function getCurrentSession(): Promise<SessionPayload | null> {
-  if (DEMO_MODE) { const jar=await cookies(); const token=jar.get(ACCESS_COOKIE)?.value; if(!token) return null; return {sub:DEMO_USER_ID,email:DEMO_EMAIL,role:"user",name:DEMO_NAME}; }
+  if (DEMO_MODE) {
+    const jar = await cookies();
+    const token = jar.get(ACCESS_COOKIE)?.value;
+    if (!token) return null;
+    return { sub: DEMO_USER_ID, email: DEMO_EMAIL, role: "user", name: DEMO_NAME };
+  }
   const jar = await cookies();
   let access = jar.get(ACCESS_COOKIE)?.value;
   const refresh = jar.get(REFRESH_COOKIE)?.value;
