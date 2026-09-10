@@ -85,19 +85,16 @@ export async function signUp(email: string, password: string, name: string) {
   console.log("[signUp] supabase status:", response.status);
   console.log("[signUp] supabase body:", JSON.stringify(body).slice(0, 800));
 
-  // Hard failure: non-2xx with no user object
   if (!response.ok) {
     console.error("[signUp] non-ok response:", response.status, body);
     throw new Error(extractErrorMessage(body, response.status, "Supabase signup failed"));
   }
 
-  // 200 but no user object at all — treat as an error surface
   if (!body.user) {
     console.error("[signUp] 200 but no user object:", body);
     throw new Error(extractErrorMessage(body, response.status, "Supabase signup returned no user"));
   }
 
-  // Supabase signals "already registered" by returning the user with an empty identities array.
   const identities = Array.isArray(body.user.identities) ? body.user.identities : undefined;
   const alreadyRegistered = identities !== undefined && identities.length === 0;
 
@@ -106,13 +103,11 @@ export async function signUp(email: string, password: string, name: string) {
     throw new Error("An account with this email already exists. Please log in instead.");
   }
 
-  // If Supabase returned tokens, the user is signed in (email confirmation is off).
   if (body.access_token && body.refresh_token) {
     await setAuthCookies(body.access_token, body.refresh_token);
     return { user: body.user, hasSession: true };
   }
 
-  // Otherwise, email confirmation is on and the user must confirm before signing in.
   return { user: body.user, hasSession: false };
 }
 
@@ -126,6 +121,10 @@ async function setAuthCookies(accessToken: string, refreshToken: string) {
   };
   jar.set(ACCESS_COOKIE, accessToken, { ...common, maxAge: 60 * 60 });
   jar.set(REFRESH_COOKIE, refreshToken, { ...common, maxAge: 60 * 60 * 24 * 30 });
+}
+
+export async function setAuthCookiesFromTokens(accessToken: string, refreshToken: string) {
+  await setAuthCookies(accessToken, refreshToken);
 }
 
 export async function clearSessionCookie() {
