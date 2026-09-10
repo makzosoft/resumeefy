@@ -4,7 +4,7 @@ export const dynamic = "force-dynamic";
 import { NextRequest, NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { z } from "zod";
-import { clearSessionCookie, getCurrentSession, signIn, signUp } from "@/lib/auth";
+import { clearSessionCookie, getCurrentSession, setAuthCookiesFromTokens, signIn, signUp } from "@/lib/auth";
 import {
   createAffiliate,
   recordAffiliateAttribution,
@@ -26,6 +26,12 @@ const signupSchema = z.object({
   email: z.string().email("Enter a valid email"),
   password: z.string().min(6, "Password must be at least 6 characters"),
   affiliateSignup: z.boolean().optional(),
+});
+
+const confirmSchema = z.object({
+  accessToken: z.string().min(10),
+  refreshToken: z.string().min(4),
+  type: z.string().optional(),
 });
 
 async function attachReferral(userId: string, email?: string) {
@@ -70,6 +76,23 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: true });
   }
 
+  if (action === "confirm") {
+    const parsed = confirmSchema.safeParse(body);
+    if (!parsed.success) {
+      return NextResponse.json({ error: "Invalid confirmation payload" }, { status: 400 });
+    }
+    await setAuthCookiesFromTokens(parsed.data.accessToken, parsed.data.refreshToken);
+    const session = await getCurrentSession();
+    if (session) {
+      await attachReferral(session.sub, session.email);
+      return NextResponse.json({
+        ok: true,
+        user: { id: session.sub, email: session.email, name: session.name, role: session.role },
+      });
+    }
+    return NextResponse.json({ ok: true });
+  }
+
   if (action === "login") {
     const parsed = loginSchema.safeParse(body);
     if (!parsed.success) {
@@ -104,7 +127,6 @@ export async function POST(req: NextRequest) {
     try {
       const result = await signUp(parsed.data.email, parsed.data.password, parsed.data.name);
 
-      // Email confirmation is on. Account created, no session yet.
       if (!result.hasSession) {
         const jar = await cookies();
         const referralCode = jar.get("resumeefy_referral")?.value;
@@ -125,7 +147,6 @@ export async function POST(req: NextRequest) {
         });
       }
 
-      // Email confirmation is off. Session cookie is already set.
       const session = await getCurrentSession();
       if (!session) {
         return NextResponse.json({ error: "Account profile is not ready" }, { status: 500 });
@@ -162,7 +183,6 @@ export async function POST(req: NextRequest) {
         lower.includes("email address is already");
 
       if (isDuplicate) {
-        // Try to sign them in with the same password.
         try {
           await signIn(parsed.data.email, parsed.data.password);
           const session = await getCurrentSession();
@@ -176,7 +196,7 @@ export async function POST(req: NextRequest) {
             });
           }
         } catch {
-          // Fall through to the duplicate message below.
+          // fall through
         }
         return NextResponse.json(
           { error: "An account with this email already exists. Please log in instead." },
