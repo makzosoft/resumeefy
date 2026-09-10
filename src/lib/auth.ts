@@ -13,10 +13,18 @@ if (!DEMO_MODE && (!SUPABASE_URL || !SUPABASE_ANON_KEY)) {
 
 export type SessionPayload = { sub: string; email: string; role: string; name: string };
 
+type SupabaseUser = { id: string; email?: string; identities?: unknown[] };
+
 type SupabaseAuthResponse = {
   access_token?: string;
   refresh_token?: string;
-  user?: { id: string; email?: string };
+  user?: SupabaseUser | null;
+  error_description?: string;
+  msg?: string;
+  error?: string;
+  message?: string;
+  code?: string;
+  error_code?: string;
 };
 
 async function authRequest(path: string, init: RequestInit = {}) {
@@ -31,67 +39,91 @@ async function authRequest(path: string, init: RequestInit = {}) {
   });
 }
 
+function extractErrorMessage(body: SupabaseAuthResponse, status: number, fallback: string) {
+  return (
+    body.error_description ||
+    body.msg ||
+    body.error ||
+    body.message ||
+    body.code ||
+    body.error_code ||
+    `${fallback} (${status})`
+  );
+}
+
 export async function signIn(email: string, password: string) {
-  if (DEMO_MODE) { await setDemoCookie(); return { id: DEMO_USER_ID, email: email || DEMO_EMAIL }; }
+  if (DEMO_MODE) {
+    await setDemoCookie();
+    return { id: DEMO_USER_ID, email: email || DEMO_EMAIL };
+  }
   const response = await authRequest("token?grant_type=password", {
     method: "POST",
     body: JSON.stringify({ email, password }),
   });
-  const body = await response.json().catch(() => ({})) as SupabaseAuthResponse & {
-    error_description?: string;
-    msg?: string;
-    error?: string;
-    message?: string;
-  };
+  const body = (await response.json().catch(() => ({}))) as SupabaseAuthResponse;
+
   if (!response.ok || !body.access_token || !body.refresh_token || !body.user) {
-    const raw =
-      body.error_description ||
-      body.msg ||
-      body.error ||
-      body.message ||
-      `Supabase sign in failed (${response.status})`;
     console.error("[signIn] supabase response:", response.status, body);
-    throw new Error(raw);
+    throw new Error(extractErrorMessage(body, response.status, "Supabase sign in failed"));
   }
   await setAuthCookies(body.access_token, body.refresh_token);
   return body.user;
 }
 
 export async function signUp(email: string, password: string, name: string) {
-  if (DEMO_MODE) { await setDemoCookie(); return { user: { id: DEMO_USER_ID, email: email || DEMO_EMAIL }, hasSession: true }; }
+  if (DEMO_MODE) {
+    await setDemoCookie();
+    return { user: { id: DEMO_USER_ID, email: email || DEMO_EMAIL }, hasSession: true };
+  }
+
   const response = await authRequest("signup", {
     method: "POST",
     body: JSON.stringify({ email, password, data: { name } }),
   });
-  const body = await response.json().catch(() => ({})) as SupabaseAuthResponse & {
-    error_description?: string;
-    msg?: string;
-    error?: string;
-    message?: string;
-    code?: string;
-    error_code?: string;
-  };
+  const body = (await response.json().catch(() => ({}))) as SupabaseAuthResponse;
 
-  if (!response.ok || !body.user) {
-    const raw =
-      body.error_description ||
-      body.msg ||
-      body.error ||
-      body.message ||
-      body.code ||
-      body.error_code ||
-      `Supabase signup failed (${response.status})`;
-    console.error("[signUp] supabase response:", response.status, body);
-    throw new Error(raw);
+  console.log("[signUp] supabase status:", response.status);
+  console.log("[signUp] supabase body:", JSON.stringify(body).slice(0, 800));
+
+  // Hard failure: non-2xx with no user object
+  if (!response.ok) {
+    console.error("[signUp] non-ok response:", response.status, body);
+    throw new Error(extractErrorMessage(body, response.status, "Supabase signup failed"));
   }
 
-  if (body.access_token && body.refresh_token) await setAuthCookies(body.access_token, body.refresh_token);
-  return { user: body.user, hasSession: Boolean(body.access_token) };
+  // 200 but no user object at all — treat as an error surface
+  if (!body.user) {
+    console.error("[signUp] 200 but no user object:", body);
+    throw new Error(extractErrorMessage(body, response.status, "Supabase signup returned no user"));
+  }
+
+  // Supabase signals "already registered" by returning the user with an empty identities array.
+  const identities = Array.isArray(body.user.identities) ? body.user.identities : undefined;
+  const alreadyRegistered = identities !== undefined && identities.length === 0;
+
+  if (alreadyRegistered) {
+    console.warn("[signUp] account already registered:", email);
+    throw new Error("An account with this email already exists. Please log in instead.");
+  }
+
+  // If Supabase returned tokens, the user is signed in (email confirmation is off).
+  if (body.access_token && body.refresh_token) {
+    await setAuthCookies(body.access_token, body.refresh_token);
+    return { user: body.user, hasSession: true };
+  }
+
+  // Otherwise, email confirmation is on and the user must confirm before signing in.
+  return { user: body.user, hasSession: false };
 }
 
 async function setAuthCookies(accessToken: string, refreshToken: string) {
   const jar = await cookies();
-  const common = { httpOnly: true, secure: process.env.NODE_ENV === "production", sameSite: "lax" as const, path: "/" };
+  const common = {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "lax" as const,
+    path: "/",
+  };
   jar.set(ACCESS_COOKIE, accessToken, { ...common, maxAge: 60 * 60 });
   jar.set(REFRESH_COOKIE, refreshToken, { ...common, maxAge: 60 * 60 * 24 * 30 });
 }
@@ -108,7 +140,7 @@ async function refreshSession(refreshToken: string) {
     body: JSON.stringify({ refresh_token: refreshToken }),
   });
   if (!response.ok) return false;
-  const body = await response.json().catch(() => ({})) as SupabaseAuthResponse;
+  const body = (await response.json().catch(() => ({}))) as SupabaseAuthResponse;
   if (!body.access_token || !body.refresh_token) return false;
   await setAuthCookies(body.access_token, body.refresh_token);
   return true;
@@ -132,13 +164,14 @@ export async function getCurrentSession(): Promise<SessionPayload | null> {
     if (!token) return null;
     return { sub: DEMO_USER_ID, email: DEMO_EMAIL, role: "user", name: DEMO_NAME };
   }
+
   const jar = await cookies();
   let access = jar.get(ACCESS_COOKIE)?.value;
   const refresh = jar.get(REFRESH_COOKIE)?.value;
   if (!access || !refresh) return null;
 
   let response = await authRequest("user", { headers: { Authorization: `Bearer ${access}` } });
-  if (response.status === 401 && await refreshSession(refresh)) {
+  if (response.status === 401 && (await refreshSession(refresh))) {
     const nextJar = await cookies();
     access = nextJar.get(ACCESS_COOKIE)?.value;
     if (!access) return null;
@@ -149,7 +182,7 @@ export async function getCurrentSession(): Promise<SessionPayload | null> {
     return null;
   }
 
-  const authUser = await response.json() as { id: string; email?: string };
+  const authUser = (await response.json()) as { id: string; email?: string };
   const profile = await getUserProfile(authUser.id);
   if (!profile) return null;
   return { sub: profile.id, email: profile.email, role: profile.role, name: profile.name };
