@@ -25,7 +25,6 @@ async function attachReferral(userId: string, email?: string) {
     await recordUserReferral(inviteCode, email, userId).catch(() => {});
     await completeUserReferral(userId, email, inviteCode).catch(() => {});
   } else if (email) {
-    // The referral may have been captured before email confirmation.
     const { getUserInviteReferralByEmail } = await import("@/lib/data");
     const pending = await getUserInviteReferralByEmail(email).catch(() => undefined);
     if (pending?.invite_code) await completeUserReferral(userId, email, pending.invite_code).catch(() => {});
@@ -59,7 +58,8 @@ export async function POST(req: NextRequest) {
       await attachReferral(session.sub, session.email);
       return NextResponse.json({ id: session.sub, name: session.name, email: session.email, role: session.role });
     } catch (error) {
-      return NextResponse.json({ error: error instanceof Error ? error.message : "Incorrect email or password" }, { status: 401 });
+      const message = error instanceof Error ? error.message : "Incorrect email or password";
+      return NextResponse.json({ error: message }, { status: 401 });
     }
   }
 
@@ -104,7 +104,8 @@ export async function POST(req: NextRequest) {
         lower.includes("already registered") ||
         lower.includes("already exists") ||
         lower.includes("duplicate") ||
-        lower.includes("user already");
+        lower.includes("user already") ||
+        lower.includes("email address is already");
 
       if (isDuplicate) {
         try {
@@ -120,7 +121,7 @@ export async function POST(req: NextRequest) {
             });
           }
         } catch {
-          // fall through to the generic duplicate message below
+          // fall through to the message below
         }
         return NextResponse.json(
           { error: "An account with this email already exists. Please log in instead." },
