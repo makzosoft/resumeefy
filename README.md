@@ -42,11 +42,6 @@ The assessment now adds an adaptive interview round after the role simulation. Q
 - `FLW_SECRET_KEY` and `FLW_WEBHOOK_HASH` are required for payments.
 - Supabase Postgres is stored in `data/` by default. Use a persistent volume or migrate `src/lib/db.ts` to Postgres before production deployment on an ephemeral filesystem platform.
 
-Create an admin account with:
-
-```bash
-node scripts/seed-admin.mjs you@resumeefy.site "Your Name" "a-strong-password"
-```
 
 Run locally with:
 
