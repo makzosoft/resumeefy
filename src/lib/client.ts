@@ -6,8 +6,22 @@ export async function api<T = unknown>(path: string, opts: RequestInit = {}): Pr
   });
   const json = await res.json().catch(() => ({}));
   if (!res.ok) {
-    if (res.status === 402 && typeof window !== "undefined") window.dispatchEvent(new CustomEvent("resumeefy:credits-needed"));
-    throw new Error((json as { error?: string }).error || "Something went wrong");
+    const data = json as { error?: string; code?: string };
+    if (typeof window !== "undefined") {
+      if (res.status === 402) {
+        console.warn("[ai:client] credits-needed event");
+        window.dispatchEvent(new CustomEvent("resumeefy:credits-needed"));
+      }
+      if (res.status === 503 && data.code === "AI_QUOTA_EXHAUSTED") {
+        console.warn("[ai:client] ai-unavailable event (all keys exhausted)");
+        window.dispatchEvent(new CustomEvent("resumeefy:ai-unavailable"));
+      }
+      if (res.status === 503 && data.code === "AI_NOT_CONFIGURED") {
+        console.warn("[ai:client] ai-unavailable event (not configured)");
+        window.dispatchEvent(new CustomEvent("resumeefy:ai-unavailable"));
+      }
+    }
+    throw new Error(data.error || "Something went wrong");
   }
   return json as T;
 }
