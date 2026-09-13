@@ -1,0 +1,719 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>GitHub Uploader</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  :root{
+    --bg:#15171c; --panel:#1d2027; --panel-2:#242832; --border:#33384a;
+    --text:#e7e9ee; --muted:#9aa0b0; --accent:#5b8cff; --accent-2:#3a63cc;
+    --good:#5bd18a; --bad:#ff8080;
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  }
+  *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
+  html,body{margin:0;height:100%;background:var(--bg);color:var(--text);font-size:14px;}
+  button,input,select{font-family:inherit;}
+  input,select,button{
+    background:var(--panel-2); color:var(--text); border:1px solid var(--border);
+    border-radius:6px; padding:8px 10px; font-size:13px; outline:none;
+  }
+  button{cursor:pointer;}
+  button.primary{background:var(--accent); border-color:var(--accent); color:#fff; font-weight:600;}
+  button.primary:hover{background:var(--accent-2);}
+  button.small{padding:5px 8px; font-size:12px;}
+
+  /* ---------- Connect screen ---------- */
+  #connectScreen{
+    max-width:420px; margin:60px auto; padding:24px; background:var(--panel);
+    border:1px solid var(--border); border-radius:12px; line-height:1.6;
+  }
+  #connectScreen h2{margin-top:0; font-size:18px;}
+  #connectScreen ol{padding-left:20px; color:var(--muted); font-size:13px;}
+  #connectScreen code{background:var(--panel-2); padding:1px 5px; border-radius:4px;}
+  #tokenRow{display:flex; gap:8px; margin-top:14px;}
+  #tokenInput{flex:1;}
+  #connectStatus{margin-top:10px; font-size:13px; min-height:18px;}
+  #connectStatus.err{color:var(--bad);}
+  #connectStatus.ok{color:var(--good);}
+
+  /* ---------- Top bar ---------- */
+  #topbar{
+    display:flex; align-items:center; gap:8px; flex-wrap:wrap;
+    padding:8px 12px; background:var(--panel); border-bottom:1px solid var(--border);
+  }
+  #userChip{display:flex; align-items:center; gap:6px; color:var(--muted); font-size:12px;}
+  #userChip img{width:22px; height:22px; border-radius:50%;}
+  #repoSelect{max-width:170px;}
+  #branchSelect{max-width:120px;}
+  #topStatus{margin-left:auto; font-size:12px; color:var(--muted); max-width:260px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+  #topStatus.err{color:var(--bad);}
+  #topStatus.ok{color:var(--good);}
+
+  /* ---------- Split panels ---------- */
+  #split{display:flex; height:calc(100% - 106px);}
+  .panel{display:flex; flex-direction:column; min-width:0;}
+  #ghPanel{flex:1.15; border-right:1px solid var(--border);}
+  #filesPanel{flex:1;}
+  .panel-head{
+    display:flex; align-items:center; gap:6px; padding:8px 10px;
+    background:var(--panel); border-bottom:1px solid var(--border); font-size:12px; color:var(--muted);
+  }
+  .panel-body{flex:1; overflow-y:auto; padding:6px;}
+  #breadcrumb{flex:1; overflow-x:auto; white-space:nowrap; font-size:12px;}
+  #breadcrumb span{cursor:pointer; color:var(--accent);}
+  #breadcrumb span:last-child{color:var(--muted); cursor:default;}
+
+  .row-item{
+    display:flex; align-items:center; gap:8px; padding:9px 8px; border-radius:8px;
+    margin-bottom:3px; font-size:13px; border:1px solid transparent;
+  }
+  .row-item.dir{cursor:pointer;}
+  .row-item.dir:hover{background:var(--panel-2);}
+  .row-item .ic{width:18px; text-align:center; flex-shrink:0;}
+  .row-item .nm{flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+
+  .drop-zone.drag-over{background:rgba(91,140,255,.18); border-color:var(--accent);}
+  #currentFolderZone{
+    margin:4px 6px 8px; padding:14px 10px; border:2px dashed var(--border); border-radius:10px;
+    text-align:center; font-size:12px; color:var(--muted);
+  }
+  #currentFolderZone.drag-over{background:rgba(91,140,255,.18); border-color:var(--accent); color:var(--text);}
+
+  .file-card{
+    display:flex; align-items:center; gap:8px; padding:9px 8px; border-radius:8px;
+    background:var(--panel-2); border:1px solid var(--border); margin-bottom:6px;
+    touch-action:pan-y; user-select:none; -webkit-user-select:none;
+  }
+  .file-card.dragging{touch-action:none; opacity:.4;}
+  .file-card .ic{flex-shrink:0;}
+  .file-card .nm{flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:12.5px;}
+  .file-card .sz{font-size:11px; color:var(--muted); flex-shrink:0;}
+  .file-card .rm{flex-shrink:0; width:26px; height:26px; padding:0; border-radius:6px;}
+  .file-card .state{font-size:11px; flex-shrink:0;}
+  .file-card .state.ok{color:var(--good);}
+  .file-card .state.err{color:var(--bad);}
+
+  #ghostCard{
+    position:fixed; z-index:200; pointer-events:none; padding:9px 12px; border-radius:8px;
+    background:var(--accent); color:#fff; font-size:12.5px; box-shadow:0 8px 24px rgba(0,0,0,.4);
+    display:none; max-width:60vw; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+  }
+
+  #emptyGh, #emptyFiles{color:var(--muted); font-size:12.5px; text-align:center; padding:24px 10px; line-height:1.5;}
+  #addFilesBtn{width:100%; margin-bottom:8px;}
+
+  #loadingScreen{
+    display:flex; align-items:center; justify-content:center; height:100%;
+    flex-direction:column; gap:12px; color:var(--muted); font-size:13px;
+  }
+  .spinner{
+    width:28px; height:28px; border-radius:50%; border:3px solid var(--border);
+    border-top-color:var(--accent); animation:spin .8s linear infinite;
+  }
+  @keyframes spin{to{transform:rotate(360deg);}}
+  #toastHost{position:fixed; left:0; right:0; bottom:14px; display:flex; flex-direction:column; align-items:center; gap:6px; z-index:100; pointer-events:none;}
+  .toast{
+    background:var(--panel-2); border:1px solid var(--border); color:var(--text);
+    padding:9px 16px; border-radius:20px; font-size:12.5px; box-shadow:0 8px 24px rgba(0,0,0,.4);
+    max-width:90vw; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+    animation:toastIn .2s ease;
+  }
+  .toast.ok{border-color:var(--good); color:var(--good);}
+  .toast.err{border-color:var(--bad); color:var(--bad);}
+  @keyframes toastIn{from{opacity:0; transform:translateY(8px);} to{opacity:1; transform:translateY(0);}}
+
+  #commitsDrawer{
+    position:fixed; right:0; top:0; bottom:0; width:280px; max-width:86vw; background:var(--panel);
+    border-left:1px solid var(--border); z-index:90; transform:translateX(100%);
+    transition:transform .2s ease; display:flex; flex-direction:column;
+  }
+  #commitsDrawer.open{transform:translateX(0);}
+  #commitsHead{display:flex; align-items:center; gap:8px; padding:10px; border-bottom:1px solid var(--border);}
+  #commitsHead b{font-size:13px; flex:1;}
+  #commitsList{flex:1; overflow-y:auto; padding:8px;}
+  .commit-row{padding:10px 8px; border-bottom:1px solid var(--border); font-size:12.5px;}
+  .commit-row .msg{color:var(--text); margin-bottom:3px; word-break:break-word;}
+  .commit-row .meta{color:var(--muted); font-size:11px; display:flex; align-items:center; gap:6px;}
+  .commit-row .dot{width:8px; height:8px; border-radius:50%; flex-shrink:0; background:var(--border);}
+  .commit-row .dot.success{background:var(--good);}
+  .commit-row .dot.failure,.commit-row .dot.error{background:var(--bad);}
+  .commit-row .dot.pending{background:#f0c33c;}
+</style>
+<script>
+(function(){
+  var TOOL_NAME = "github-uploader";
+  function send(level, args){
+    if (window.parent === window) return;
+    try{
+      var text = Array.prototype.map.call(args, function(a){
+        if (typeof a === "string") return a;
+        try{ return JSON.stringify(a); }catch(e){ return String(a); }
+      }).join(" ");
+      parent.postMessage({__devConsole:true, tool:TOOL_NAME, level:level, time:Date.now(), text:text}, "*");
+    }catch(e){}
+  }
+  ["log","warn","error","info","debug"].forEach(function(level){
+    var orig = console[level] ? console[level].bind(console) : function(){};
+    console[level] = function(){ send(level, arguments); orig.apply(console, arguments); };
+  });
+  window.addEventListener("error", function(e){ send("error", [e.message + " (" + e.filename + ":" + e.lineno + ")"]); });
+  window.addEventListener("unhandledrejection", function(e){ send("error", ["Unhandled rejection: " + (e.reason && e.reason.message || e.reason)]); });
+})();
+</script>
+</head>
+<body>
+
+<div id="loadingScreen" style="display:none;"><div class="spinner"></div><span>Checking for a saved GitHub connection…</span></div>
+
+<div id="connectScreen">
+  <h2>Connect to GitHub</h2>
+  <p style="color:var(--muted);font-size:13px;">
+    A plain local file can't do full GitHub sign-in (that needs a server), so this uses a
+    <b>Personal Access Token</b> instead — it works entirely from your phone, no hosting needed.
+  </p>
+  <ol>
+    <li>Go to <code>github.com/settings/tokens</code></li>
+    <li>Generate a token (classic is simplest) with the <code>repo</code> scope</li>
+    <li>Paste it below — it's stored only in this browser, on this device</li>
+  </ol>
+  <div id="tokenRow">
+    <input id="tokenInput" type="password" placeholder="ghp_xxxxxxxxxxxx" spellcheck="false" autocapitalize="off">
+    <button id="showTokenBtn" class="small">👁</button>
+    <button id="connectBtn" class="primary">Connect</button>
+  </div>
+  <div id="connectStatus"></div>
+</div>
+
+<div id="mainApp" style="display:none; height:100%;">
+  <div id="topbar">
+    <span id="userChip"></span>
+    <select id="repoSelect"><option value="">Select repo…</option></select>
+    <select id="branchSelect"><option value="">Branch…</option></select>
+    <button id="disconnectBtn" class="small" title="Forget token">Disconnect</button>
+    <button id="commitsBtn" class="small" title="Recent commits">🕓 Commits</button>
+    <span id="topStatus"></span>
+  </div>
+
+  <div id="commitsDrawer">
+    <div id="commitsHead"><b>Recent commits</b><button id="commitsClose" class="small">Close</button></div>
+    <div id="commitsList"></div>
+  </div>
+
+  <div id="split">
+    <div class="panel" id="ghPanel">
+      <div class="panel-head">
+        <span>🐙</span>
+        <div id="breadcrumb"></div>
+      </div>
+      <div class="panel-body">
+        <div id="currentFolderZone" class="drop-zone">Drop files here to add to this folder</div>
+        <div id="ghList"></div>
+        <div id="emptyGh" style="display:none;">Pick a repo to browse its files.</div>
+      </div>
+    </div>
+
+    <div class="panel" id="filesPanel">
+      <div class="panel-head"><span>📱</span><span>Your device</span></div>
+      <div class="panel-body">
+        <button id="addFilesBtn">➕ Choose files from phone</button>
+        <input id="fileInput" type="file" multiple style="display:none;">
+        <div id="fileList"></div>
+        <div id="emptyFiles">No files selected yet. Choose files, then drag a card onto a folder on the left.</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="ghostCard"></div>
+<div id="toastHost"></div>
+
+<script>
+(function(){
+  "use strict";
+
+  var API = "https://api.github.com";
+  var els = {};
+  ["loadingScreen","connectScreen","tokenInput","showTokenBtn","connectBtn","connectStatus","mainApp",
+   "userChip","repoSelect","branchSelect","disconnectBtn","topStatus",
+   "breadcrumb","ghList","emptyGh","currentFolderZone",
+   "addFilesBtn","fileInput","fileList","emptyFiles","ghostCard","toastHost",
+   "commitsBtn","commitsDrawer","commitsList","commitsClose"
+  ].forEach(function(id){ els[id] = document.getElementById(id); });
+
+  function showScreen(name){
+    els.loadingScreen.style.display = name === "loading" ? "flex" : "none";
+    els.connectScreen.style.display = name === "connect" ? "block" : "none";
+    els.mainApp.style.display = name === "app" ? "block" : "none";
+  }
+  function showToast(msg, kind){
+    var t = document.createElement("div");
+    t.className = "toast" + (kind ? " " + kind : "");
+    t.textContent = msg;
+    els.toastHost.appendChild(t);
+    setTimeout(function(){ t.remove(); }, 3800);
+  }
+
+  var TOKEN_KEY = "ghUploader.token";
+  var STATE_KEY = "ghUploader.state.v1";
+
+  var state = {
+    token: null, username: null, avatar: null,
+    owner: null, repo: null, branch: null,
+    path: "", // current folder path within repo
+    files: []  // { id, file, status: 'ready'|'uploading'|'done'|'error', msg }
+  };
+  var fileIdSeq = 1;
+
+  function loadSaved(){ try{ return JSON.parse(localStorage.getItem(STATE_KEY)) || {}; }catch(e){ return {}; } }
+  function saveState(){
+    try{ localStorage.setItem(STATE_KEY, JSON.stringify({ owner:state.owner, repo:state.repo, branch:state.branch, path:state.path })); }catch(e){}
+  }
+
+  function setTopStatus(msg, kind){
+    els.topStatus.textContent = msg || "";
+    els.topStatus.className = kind || "";
+  }
+  function setConnectStatus(msg, kind){
+    els.connectStatus.textContent = msg || "";
+    els.connectStatus.className = kind || "";
+  }
+
+  function ghHeaders(){
+    return { "Authorization": "token " + state.token, "Accept": "application/vnd.github+json" };
+  }
+  function encodeApiPath(path){
+    return path.split("/").filter(Boolean).map(encodeURIComponent).join("/");
+  }
+
+  // ------------------------------------------------------------------
+  // Auth
+  // ------------------------------------------------------------------
+  els.showTokenBtn.addEventListener("click", function(){
+    els.tokenInput.type = els.tokenInput.type === "password" ? "text" : "password";
+  });
+
+  function connectWithToken(token){
+    setConnectStatus("Checking token…");
+    return fetch(API + "/user", { headers: { "Authorization": "token " + token } })
+      .then(function(res){
+        if (!res.ok){
+          if (res.status === 401) throw new Error("That token was rejected — check it was copied fully and has the 'repo' scope.");
+          throw new Error("GitHub returned " + res.status + " — try again.");
+        }
+        return res.json();
+      })
+      .then(function(user){
+        state.token = token; state.username = user.login; state.avatar = user.avatar_url;
+        try{ localStorage.setItem(TOKEN_KEY, token); }catch(e){}
+        setConnectStatus("Connected as " + user.login, "ok");
+        showApp();
+        loadRepos();
+        return true;
+      })
+      .catch(function(err){
+        setConnectStatus(err.message, "err");
+        showScreen("connect");
+        return false;
+      });
+  }
+
+  els.connectBtn.addEventListener("click", function(){
+    var t = els.tokenInput.value.trim();
+    if (!t){ setConnectStatus("Paste a token first.", "err"); return; }
+    connectWithToken(t);
+  });
+  els.tokenInput.addEventListener("keydown", function(e){ if (e.key === "Enter") els.connectBtn.click(); });
+
+  els.disconnectBtn.addEventListener("click", function(){
+    try{ localStorage.removeItem(TOKEN_KEY); }catch(e){}
+    state.token = null;
+    els.tokenInput.value = "";
+    setConnectStatus("Disconnected.", "");
+    showScreen("connect");
+  });
+
+  function showApp(){
+    showScreen("app");
+    els.userChip.innerHTML = state.avatar
+      ? '<img src="' + state.avatar + '"> ' + state.username
+      : state.username;
+  }
+
+  // ------------------------------------------------------------------
+  // Repos / branches / folder listing
+  // ------------------------------------------------------------------
+  function loadRepos(){
+    setTopStatus("Loading repos…");
+    fetch(API + "/user/repos?per_page=100&sort=updated", { headers: ghHeaders() })
+      .then(function(r){ return r.json(); })
+      .then(function(repos){
+        els.repoSelect.innerHTML = '<option value="">Select repo…</option>';
+        repos.forEach(function(r){
+          var opt = document.createElement("option");
+          opt.value = r.full_name;
+          opt.textContent = r.full_name;
+          opt._repo = r;
+          els.repoSelect.appendChild(opt);
+        });
+        setTopStatus(repos.length + " repos loaded", "ok");
+
+        var saved = loadSaved();
+        if (saved.owner && saved.repo){
+          var fullName = saved.owner + "/" + saved.repo;
+          if (repos.some(function(r){ return r.full_name === fullName; })){
+            els.repoSelect.value = fullName;
+            selectRepo(fullName, saved.branch, saved.path || "");
+          }
+        }
+      })
+      .catch(function(err){ setTopStatus("Couldn't load repos: " + err.message, "err"); });
+  }
+
+  els.repoSelect.addEventListener("change", function(){
+    if (els.repoSelect.value) selectRepo(els.repoSelect.value);
+  });
+
+  function selectRepo(fullName, preferBranch, preferPath){
+    var parts = fullName.split("/");
+    state.owner = parts[0]; state.repo = parts[1]; state.path = preferPath || "";
+    setTopStatus("Loading branches…");
+    fetch(API + "/repos/" + fullName + "/branches?per_page=100", { headers: ghHeaders() })
+      .then(function(r){ return r.json(); })
+      .then(function(branches){
+        els.branchSelect.innerHTML = "";
+        branches.forEach(function(b){
+          var opt = document.createElement("option");
+          opt.value = b.name; opt.textContent = b.name;
+          els.branchSelect.appendChild(opt);
+        });
+        var target = (preferBranch && branches.some(function(b){return b.name===preferBranch;})) ? preferBranch : (branches[0] && branches[0].name);
+        if (target){ els.branchSelect.value = target; state.branch = target; }
+        saveState();
+        loadFolder(state.path);
+      })
+      .catch(function(err){ setTopStatus("Couldn't load branches: " + err.message, "err"); });
+  }
+
+  els.branchSelect.addEventListener("change", function(){
+    state.branch = els.branchSelect.value; state.path = "";
+    saveState(); loadFolder("");
+  });
+
+  function renderBreadcrumb(){
+    var parts = state.path ? state.path.split("/") : [];
+    var html = '<span data-path="">' + (state.repo || "repo") + "</span>";
+    var acc = "";
+    parts.forEach(function(p){
+      acc = acc ? acc + "/" + p : p;
+      html += " / <span data-path=\"" + acc + "\">" + p + "</span>";
+    });
+    els.breadcrumb.innerHTML = html;
+    Array.prototype.slice.call(els.breadcrumb.querySelectorAll("span")).forEach(function(s){
+      s.addEventListener("click", function(){ state.path = s.getAttribute("data-path"); saveState(); loadFolder(state.path); });
+    });
+  }
+
+  function loadFolder(path){
+    if (!state.owner || !state.repo || !state.branch) return;
+    state.path = path || "";
+    renderBreadcrumb();
+    els.currentFolderZone.textContent = "Drop files here → adds to /" + (state.path || "(root)");
+    els.currentFolderZone.dataset.path = state.path;
+    els.ghList.innerHTML = "";
+    els.emptyGh.style.display = "none";
+    setTopStatus("Loading folder…");
+    var url = API + "/repos/" + state.owner + "/" + state.repo + "/contents/" + encodeApiPath(state.path) + "?ref=" + encodeURIComponent(state.branch);
+    fetch(url, { headers: ghHeaders() })
+      .then(function(r){ if (!r.ok) throw new Error(r.status === 404 ? "Folder not found" : "GitHub error " + r.status); return r.json(); })
+      .then(function(entries){
+        if (!Array.isArray(entries)) entries = [];
+        entries.sort(function(a,b){
+          if (a.type !== b.type) return a.type === "dir" ? -1 : 1;
+          return a.name.localeCompare(b.name);
+        });
+        if (!entries.length){
+          els.emptyGh.style.display = "block";
+          els.emptyGh.textContent = "This folder is empty.";
+        }
+        entries.forEach(function(entry){
+          var row = document.createElement("div");
+          row.className = "row-item" + (entry.type === "dir" ? " dir drop-zone" : "");
+          if (entry.type === "dir") row.dataset.path = entry.path;
+          row.innerHTML = '<span class="ic">' + (entry.type === "dir" ? "📁" : "📄") + '</span><span class="nm">' + entry.name + "</span>";
+          if (entry.type === "dir"){
+            row.addEventListener("click", function(e){
+              if (row.classList.contains("nav-blocked")) return;
+              state.path = entry.path; saveState(); loadFolder(state.path);
+            });
+          }
+          els.ghList.appendChild(row);
+        });
+        setTopStatus("Ready", "ok");
+      })
+      .catch(function(err){ setTopStatus(err.message, "err"); });
+  }
+
+  function loadCommits(){
+    if (!state.owner || !state.repo || !state.branch) return;
+    els.commitsList.innerHTML = '<div class="commit-row">Loading…</div>';
+    fetch(API + "/repos/" + state.owner + "/" + state.repo + "/commits?sha=" + encodeURIComponent(state.branch) + "&per_page=20", { headers: ghHeaders() })
+      .then(function(r){ if (!r.ok) throw new Error("GitHub error " + r.status); return r.json(); })
+      .then(function(commits){
+        els.commitsList.innerHTML = "";
+        if (!commits.length){ els.commitsList.innerHTML = '<div class="commit-row">No commits yet.</div>'; return; }
+        commits.forEach(function(c, i){
+          var row = document.createElement("div");
+          row.className = "commit-row";
+          var when = new Date(c.commit.author.date).toLocaleString();
+          var msg = (c.commit.message || "").split("\n")[0];
+          row.innerHTML = '<div class="msg">' + msg.replace(/</g,"&lt;") + '</div>' +
+            '<div class="meta"><span class="dot" data-sha="' + c.sha + '"></span>' + (c.commit.author.name||"") + " · " + when + "</div>";
+          els.commitsList.appendChild(row);
+          if (i === 0){
+            fetch(API + "/repos/" + state.owner + "/" + state.repo + "/commits/" + c.sha + "/status", { headers: ghHeaders() })
+              .then(function(r){ return r.ok ? r.json() : null; })
+              .then(function(status){
+                if (status && status.state){ row.querySelector(".dot").classList.add(status.state); }
+              }).catch(function(){});
+          }
+        });
+      })
+      .catch(function(err){ els.commitsList.innerHTML = '<div class="commit-row">' + err.message + '</div>'; });
+  }
+  els.commitsBtn.addEventListener("click", function(){ els.commitsDrawer.classList.add("open"); loadCommits(); });
+  els.commitsClose.addEventListener("click", function(){ els.commitsDrawer.classList.remove("open"); });
+
+  // ------------------------------------------------------------------
+  // Local files (right panel)
+  // ------------------------------------------------------------------
+  els.addFilesBtn.addEventListener("click", function(){ els.fileInput.click(); });
+  els.fileInput.addEventListener("change", function(){
+    Array.prototype.slice.call(els.fileInput.files || []).forEach(function(f){
+      state.files.push({ id: fileIdSeq++, file: f, status: "ready", msg: "", extract: /\.zip$/i.test(f.name) });
+    });
+    els.fileInput.value = "";
+    renderFileList();
+  });
+
+  function humanSize(bytes){
+    if (bytes < 1024) return bytes + " B";
+    if (bytes < 1024*1024) return Math.round(bytes/1024) + " KB";
+    return (bytes/1024/1024).toFixed(1) + " MB";
+  }
+
+  function renderFileList(){
+    els.fileList.innerHTML = "";
+    els.emptyFiles.style.display = state.files.length ? "none" : "block";
+    state.files.forEach(function(entry){
+      var card = document.createElement("div");
+      card.className = "file-card";
+      card.dataset.id = entry.id;
+      var stateHtml = "";
+      if (entry.status === "uploading") stateHtml = '<span class="state">' + (entry.progress || "…") + '</span>';
+      else if (entry.status === "done") stateHtml = '<span class="state ok">✓ ' + (entry.msg||"") + '</span>';
+      else if (entry.status === "error") stateHtml = '<span class="state err" title="' + (entry.msg||"").replace(/"/g,"") + '">✕</span>';
+      var isZip = /\.zip$/i.test(entry.file.name);
+      card.innerHTML =
+        '<span class="ic">' + (isZip ? "🗜️" : "📄") + '</span>' +
+        '<span class="nm">' + entry.file.name + '</span>' +
+        '<span class="sz">' + humanSize(entry.file.size) + '</span>' +
+        stateHtml +
+        '<button class="rm small" title="Remove">✕</button>';
+      if (isZip){
+        var extractRow = document.createElement("label");
+        extractRow.style.cssText = "display:flex;align-items:center;gap:6px;font-size:11.5px;color:var(--muted);margin-top:-2px;margin-bottom:6px;padding-left:2px;";
+        extractRow.innerHTML = '<input type="checkbox" style="width:auto;" ' + (entry.extract !== false ? "checked" : "") + '> Extract contents on upload (replaces matching files/folders)';
+        extractRow.querySelector("input").addEventListener("change", function(e){ entry.extract = e.target.checked; });
+        card.style.flexWrap = "wrap";
+        card.appendChild(extractRow);
+      }
+      card.querySelector(".rm").addEventListener("click", function(){
+        state.files = state.files.filter(function(f){ return f.id !== entry.id; });
+        renderFileList();
+      });
+      wireDrag(card, entry);
+      els.fileList.appendChild(card);
+    });
+  }
+
+  // ------------------------------------------------------------------
+  // Pointer-based drag & drop (works with touch and mouse alike)
+  // ------------------------------------------------------------------
+  var dragCtx = null;
+
+  function findDropZone(x, y){
+    var el = document.elementFromPoint(x, y);
+    while (el && el !== document.body){
+      if (el.classList && el.classList.contains("drop-zone")) return el;
+      el = el.parentElement;
+    }
+    return null;
+  }
+  function clearDropHighlights(){
+    Array.prototype.slice.call(document.querySelectorAll(".drop-zone.drag-over")).forEach(function(z){
+      z.classList.remove("drag-over");
+    });
+  }
+
+  function wireDrag(card, entry){
+    card.addEventListener("pointerdown", function(e){
+      if (e.button !== undefined && e.button !== 0 && e.pointerType === "mouse") return;
+      e.preventDefault();
+      card.setPointerCapture(e.pointerId);
+      card.classList.add("dragging");
+      dragCtx = { entry: entry, pointerId: e.pointerId };
+      els.ghostCard.textContent = "📄 " + entry.file.name;
+      els.ghostCard.style.display = "block";
+      positionGhost(e.clientX, e.clientY);
+    });
+    card.addEventListener("pointermove", function(e){
+      if (!dragCtx || dragCtx.pointerId !== e.pointerId) return;
+      positionGhost(e.clientX, e.clientY);
+      clearDropHighlights();
+      var zone = findDropZone(e.clientX, e.clientY);
+      if (zone) zone.classList.add("drag-over");
+    });
+    function endDrag(e){
+      if (!dragCtx || dragCtx.pointerId !== e.pointerId) return;
+      card.classList.remove("dragging");
+      els.ghostCard.style.display = "none";
+      var zone = findDropZone(e.clientX, e.clientY);
+      clearDropHighlights();
+      var draggedEntry = dragCtx.entry;
+      dragCtx = null;
+      if (zone){
+        var destPath = zone.dataset.path || "";
+        if (/\.zip$/i.test(draggedEntry.file.name) && draggedEntry.extract !== false){
+          uploadZipExtracted(draggedEntry, destPath);
+        } else {
+          uploadEntry(draggedEntry, destPath);
+        }
+      }
+    }
+    card.addEventListener("pointerup", endDrag);
+    card.addEventListener("pointercancel", endDrag);
+  }
+  function positionGhost(x, y){
+    els.ghostCard.style.left = (x + 14) + "px";
+    els.ghostCard.style.top = (y + 14) + "px";
+  }
+
+  // ------------------------------------------------------------------
+  // Upload
+  // ------------------------------------------------------------------
+  function fileToBase64(file){
+    return new Promise(function(resolve, reject){
+      var reader = new FileReader();
+      reader.onload = function(){ resolve(String(reader.result).split(",")[1] || ""); };
+      reader.onerror = function(){ reject(new Error("Couldn't read file")); };
+      reader.readAsDataURL(file);
+    });
+  }
+
+  function getExistingSha(destPath){
+    var url = API + "/repos/" + state.owner + "/" + state.repo + "/contents/" + encodeApiPath(destPath) + "?ref=" + encodeURIComponent(state.branch);
+    return fetch(url, { headers: ghHeaders() }).then(function(r){
+      if (r.status === 200) return r.json().then(function(d){ return d.sha; });
+      return null;
+    }).catch(function(){ return null; });
+  }
+
+  function putFileToRepo(destPath, base64Content, message){
+    return getExistingSha(destPath).then(function(sha){
+      var body = { message: message, content: base64Content, branch: state.branch };
+      if (sha) body.sha = sha;
+      return fetch(API + "/repos/" + state.owner + "/" + state.repo + "/contents/" + encodeApiPath(destPath), {
+        method: "PUT",
+        headers: Object.assign({ "Content-Type": "application/json" }, ghHeaders()),
+        body: JSON.stringify(body)
+      }).then(function(res){
+        if (!res.ok) return res.json().then(function(d){ throw new Error(d.message || ("GitHub error " + res.status)); });
+        return res.json();
+      });
+    });
+  }
+
+  function bytesToBase64(bytes){
+    var binary = "", chunk = 0x8000;
+    for (var i = 0; i < bytes.length; i += chunk){
+      binary += String.fromCharCode.apply(null, bytes.subarray(i, i + chunk));
+    }
+    return btoa(binary);
+  }
+
+  function uploadZipExtracted(entry, folderPath){
+    if (!state.owner || !state.repo || !state.branch){ setTopStatus("Pick a repo and branch first.", "err"); return; }
+    entry.status = "uploading"; entry.progress = "unzipping…"; renderFileList();
+    entry.file.arrayBuffer()
+      .then(function(buf){ return import("https://esm.sh/fflate@0.8.2").then(function(fflate){ return fflate.unzipSync(new Uint8Array(buf)); }); })
+      .then(function(unzipped){
+        var names = Object.keys(unzipped).filter(function(n){
+          return !n.endsWith("/") && !/(^|\/)__MACOSX(\/|$)/.test(n) && !/(^|\/)\.DS_Store$/.test(n);
+        });
+        if (!names.length) throw new Error("Zip had no files to extract");
+        var done = 0, failed = [];
+        function next(i){
+          if (i >= names.length){
+            entry.status = failed.length ? "error" : "done";
+            entry.msg = failed.length ? (failed.length + "/" + names.length + " failed") : (names.length + " files → /" + (folderPath || "(root)"));
+            renderFileList();
+            showToast(failed.length ? ("Zip upload: " + failed.length + " of " + names.length + " files failed") : ("Extracted & uploaded " + names.length + " files"), failed.length ? "err" : "ok");
+            if (!folderPath || folderPath === state.path) loadFolder(state.path);
+            return;
+          }
+          var name = names[i];
+          var destPath = (folderPath ? folderPath + "/" : "") + name;
+          entry.progress = "uploading " + (i+1) + "/" + names.length;
+          renderFileList();
+          putFileToRepo(destPath, bytesToBase64(unzipped[name]), "Add " + name + " (extracted from " + entry.file.name + ") via Device Suite")
+            .then(function(){ done++; next(i+1); })
+            .catch(function(err){ failed.push(name); console.error("Failed to upload " + name + ": " + err.message); next(i+1); });
+        }
+        next(0);
+      })
+      .catch(function(err){
+        entry.status = "error"; entry.msg = err.message; renderFileList();
+        showToast("Zip extraction failed: " + err.message, "err");
+      });
+  }
+
+  function uploadEntry(entry, folderPath){
+    if (!state.owner || !state.repo || !state.branch){
+      setTopStatus("Pick a repo and branch first.", "err");
+      return;
+    }
+    entry.status = "uploading"; renderFileList();
+    var destPath = (folderPath ? folderPath + "/" : "") + entry.file.name;
+    fileToBase64(entry.file)
+      .then(function(content){ return putFileToRepo(destPath, content, "Add " + entry.file.name + " via Device Suite"); })
+      .then(function(){
+        entry.status = "done"; entry.msg = "/" + destPath;
+        renderFileList();
+        showToast("Uploaded " + entry.file.name, "ok");
+        if (folderPath === state.path) loadFolder(state.path);
+      })
+      .catch(function(err){
+        entry.status = "error"; entry.msg = err.message;
+        renderFileList();
+        showToast("Upload failed: " + entry.file.name, "err");
+        setTopStatus("Upload failed: " + err.message, "err");
+      });
+  }
+
+  // ------------------------------------------------------------------
+  // Boot
+  // ------------------------------------------------------------------
+  var savedToken = null;
+  try{ savedToken = localStorage.getItem(TOKEN_KEY); }catch(e){}
+  if (savedToken){
+    showScreen("loading");
+    connectWithToken(savedToken);
+  } else {
+    showScreen("connect");
+  }
+})();
+</script>
+
+</body>
+</html>
