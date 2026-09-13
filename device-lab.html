@@ -119,6 +119,27 @@
   }
   .drawer-handle{display:none;}
 </style>
+<script>
+(function(){
+  var TOOL_NAME = "device-lab";
+  function send(level, args){
+    if (window.parent === window) return;
+    try{
+      var text = Array.prototype.map.call(args, function(a){
+        if (typeof a === "string") return a;
+        try{ return JSON.stringify(a); }catch(e){ return String(a); }
+      }).join(" ");
+      parent.postMessage({__devConsole:true, tool:TOOL_NAME, level:level, time:Date.now(), text:text}, "*");
+    }catch(e){}
+  }
+  ["log","warn","error","info","debug"].forEach(function(level){
+    var orig = console[level] ? console[level].bind(console) : function(){};
+    console[level] = function(){ send(level, arguments); orig.apply(console, arguments); };
+  });
+  window.addEventListener("error", function(e){ send("error", [e.message + " (" + e.filename + ":" + e.lineno + ")"]); });
+  window.addEventListener("unhandledrejection", function(e){ send("error", ["Unhandled rejection: " + (e.reason && e.reason.message || e.reason)]); });
+})();
+</script>
 </head>
 <body>
 
