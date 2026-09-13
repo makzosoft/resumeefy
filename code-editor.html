@@ -1,0 +1,516 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Code Editor</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<style>
+  :root{
+    --bg:#15171c; --panel:#1d2027; --panel-2:#242832; --border:#33384a;
+    --text:#e7e9ee; --muted:#9aa0b0; --accent:#5b8cff; --accent-2:#3a63cc;
+    --good:#5bd18a; --bad:#ff8080;
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  }
+  *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
+  html,body{margin:0;height:100%;background:var(--bg);color:var(--text);font-size:14px; overscroll-behavior:none;}
+  button,input,select{font-family:inherit;}
+  input,select,button{
+    background:var(--panel-2); color:var(--text); border:1px solid var(--border);
+    border-radius:6px; padding:7px 9px; font-size:13px; outline:none;
+  }
+  button{cursor:pointer;}
+  button.primary{background:var(--accent); border-color:var(--accent); color:#fff; font-weight:600;}
+  button.small{padding:5px 8px; font-size:12px;}
+  button.icon{width:32px; height:32px; padding:0; display:flex; align-items:center; justify-content:center; flex-shrink:0;}
+
+  #connectScreen{
+    max-width:420px; margin:60px auto; padding:24px; background:var(--panel);
+    border:1px solid var(--border); border-radius:12px; line-height:1.6;
+  }
+  #connectScreen h2{margin-top:0; font-size:18px;}
+  #connectScreen ol{padding-left:20px; color:var(--muted); font-size:13px;}
+  #connectScreen code{background:var(--panel-2); padding:1px 5px; border-radius:4px;}
+  #tokenRow{display:flex; gap:8px; margin-top:14px;}
+  #tokenInput{flex:1;}
+  #connectStatus{margin-top:10px; font-size:13px; min-height:18px;}
+  #connectStatus.err{color:var(--bad);}
+  #connectStatus.ok{color:var(--good);}
+
+  #app{display:none; height:100%; flex-direction:column;}
+  #app.show{display:flex;}
+  #topbar{
+    display:flex; align-items:center; gap:6px; flex-wrap:wrap;
+    padding:7px 10px; background:var(--panel); border-bottom:1px solid var(--border);
+  }
+  #repoSelect{max-width:140px;} #branchSelect{max-width:100px;}
+  #fileLabel{font-size:12.5px; color:var(--muted); flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+  #fileLabel.dirty::after{content:" •"; color:var(--accent);}
+  #topStatus{font-size:11.5px; color:var(--muted); max-width:150px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+  #topStatus.err{color:var(--bad);} #topStatus.ok{color:var(--good);}
+
+  #body{flex:1; display:flex; min-height:0; position:relative;}
+
+  #fileDrawerBackdrop{display:none; position:fixed; inset:0; background:rgba(0,0,0,.5); z-index:40;}
+  #fileDrawerBackdrop.open{display:block;}
+  #fileDrawer{
+    width:230px; flex-shrink:0; background:var(--panel); border-right:1px solid var(--border);
+    display:flex; flex-direction:column; overflow:hidden;
+  }
+  #breadcrumb{padding:8px 10px; font-size:11.5px; color:var(--muted); border-bottom:1px solid var(--border); overflow-x:auto; white-space:nowrap;}
+  #breadcrumb span{color:var(--accent); cursor:pointer;}
+  #breadcrumb span:last-child{color:var(--muted); cursor:default;}
+  #fileTree{flex:1; overflow-y:auto; padding:6px;}
+  .row-item{display:flex; align-items:center; gap:8px; padding:9px 8px; border-radius:8px; margin-bottom:2px; font-size:13px; cursor:pointer;}
+  .row-item:hover{background:var(--panel-2);}
+  .row-item.active{background:var(--accent); color:#fff;}
+  .row-item .nm{flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+
+  #editorPane{flex:1; display:flex; flex-direction:column; min-width:0;}
+  #editorHost{flex:1; overflow:auto; min-height:0;}
+  .cm-editor{height:100%; font-size:var(--editor-fs, 14px);}
+  .cm-scroller{overflow:auto;}
+
+  #quickbar{
+    display:flex; gap:4px; overflow-x:auto; padding:6px 8px; background:var(--panel);
+    border-top:1px solid var(--border); flex-shrink:0; -webkit-overflow-scrolling:touch;
+  }
+  #quickbar button{flex-shrink:0; min-width:36px; font-family:monospace; font-size:14px;}
+
+  #emptyEditor{margin:auto; color:var(--muted); text-align:center; padding:20px; max-width:320px; line-height:1.6;}
+
+  @media (max-width:760px){
+    #fileDrawer{position:fixed; top:0; bottom:0; left:0; z-index:50; transform:translateX(-100%); transition:transform .2s ease;}
+    #fileDrawer.open{transform:translateX(0);}
+  }
+
+  #loadingScreen{
+    display:none; align-items:center; justify-content:center; height:100%;
+    flex-direction:column; gap:12px; color:var(--muted); font-size:13px;
+  }
+  .spinner{
+    width:28px; height:28px; border-radius:50%; border:3px solid var(--border);
+    border-top-color:var(--accent); animation:spin .8s linear infinite;
+  }
+  @keyframes spin{to{transform:rotate(360deg);}}
+</style>
+<script>
+(function(){
+  var TOOL_NAME = "code-editor";
+  function send(level, args){
+    if (window.parent === window) return;
+    try{
+      var text = Array.prototype.map.call(args, function(a){
+        if (typeof a === "string") return a;
+        try{ return JSON.stringify(a); }catch(e){ return String(a); }
+      }).join(" ");
+      parent.postMessage({__devConsole:true, tool:TOOL_NAME, level:level, time:Date.now(), text:text}, "*");
+    }catch(e){}
+  }
+  ["log","warn","error","info","debug"].forEach(function(level){
+    var orig = console[level] ? console[level].bind(console) : function(){};
+    console[level] = function(){ send(level, arguments); orig.apply(console, arguments); };
+  });
+  window.addEventListener("error", function(e){ send("error", [e.message + " (" + e.filename + ":" + e.lineno + ")"]); });
+  window.addEventListener("unhandledrejection", function(e){ send("error", ["Unhandled rejection: " + (e.reason && e.reason.message || e.reason)]); });
+})();
+</script>
+</head>
+<body>
+
+<div id="loadingScreen"><div class="spinner"></div><span>Checking for a saved GitHub connection…</span></div>
+
+<div id="connectScreen">
+  <h2>Connect to GitHub</h2>
+  <p style="color:var(--muted);font-size:13px;">Uses the same Personal Access Token approach as the GitHub tab.</p>
+  <ol>
+    <li>Go to <code>github.com/settings/tokens</code></li>
+    <li>Generate a token with repo access</li>
+    <li>Paste it below — stored only in this browser</li>
+  </ol>
+  <div id="tokenRow">
+    <input id="tokenInput" type="password" placeholder="ghp_xxxxxxxxxxxx" spellcheck="false" autocapitalize="off">
+    <button id="showTokenBtn" class="small">👁</button>
+    <button id="connectBtn" class="primary">Connect</button>
+  </div>
+  <div id="connectStatus"></div>
+</div>
+
+<div id="app">
+  <div id="topbar">
+    <button id="drawerToggle" class="icon">☰</button>
+    <select id="repoSelect"><option value="">Repo…</option></select>
+    <select id="branchSelect"><option value="">Branch…</option></select>
+    <span id="fileLabel">No file open</span>
+    <button id="fontDown" class="icon small" title="Smaller text">A-</button>
+    <button id="fontUp" class="icon small" title="Larger text">A+</button>
+    <button id="formatBtn" class="small" title="Format with Prettier">✨ Format</button>
+    <button id="saveBtn" class="primary small" title="Commit to GitHub">💾 Save</button>
+    <span id="topStatus"></span>
+  </div>
+
+  <div id="body">
+    <div id="fileDrawerBackdrop"></div>
+    <div id="fileDrawer">
+      <div id="breadcrumb"></div>
+      <div id="fileTree"></div>
+    </div>
+    <div id="editorPane">
+      <div id="editorHost"><div id="emptyEditor">Open ☰ and pick a file from your repo to start editing.</div></div>
+      <div id="quickbar">
+        <button data-ins="\t">Tab</button>
+        <button data-ins="{">{ }</button>
+        <button data-ins="(">( )</button>
+        <button data-ins="[">[ ]</button>
+        <button data-ins='"'>" "</button>
+        <button data-ins="'">' '</button>
+        <button data-ins=";">;</button>
+        <button data-ins=":">:</button>
+        <button data-ins="<">&lt;</button>
+        <button data-ins=">">&gt;</button>
+        <button data-ins="/">/</button>
+        <button data-ins="=">=</button>
+        <button id="emmetBtn" title="Expand Emmet abbreviation">⚡Emmet</button>
+        <button id="undoBtn" title="Undo">↶</button>
+        <button id="redoBtn" title="Redo">↷</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script type="module">
+  import { EditorView, basicSetup } from "https://esm.sh/codemirror@6.0.1";
+  import { EditorState, Compartment } from "https://esm.sh/@codemirror/state@6.4.1";
+  import { html } from "https://esm.sh/@codemirror/lang-html@6.4.9";
+  import { css } from "https://esm.sh/@codemirror/lang-css@6.2.1";
+  import { javascript } from "https://esm.sh/@codemirror/lang-javascript@6.2.2";
+  import { json } from "https://esm.sh/@codemirror/lang-json@6.0.1";
+  import { markdown } from "https://esm.sh/@codemirror/lang-markdown@6.2.5";
+  import { oneDark } from "https://esm.sh/@codemirror/theme-one-dark@6.1.2";
+  import { indentUnit } from "https://esm.sh/@codemirror/language@6.10.1";
+  import expandEmmet from "https://esm.sh/emmet@2.4.7";
+
+  import * as prettier from "https://unpkg.com/prettier@3.3.3/standalone.mjs";
+  import prettierBabel from "https://unpkg.com/prettier@3.3.3/plugins/babel.mjs";
+  import prettierEstree from "https://unpkg.com/prettier@3.3.3/plugins/estree.mjs";
+  import prettierHtml from "https://unpkg.com/prettier@3.3.3/plugins/html.mjs";
+  import prettierPostcss from "https://unpkg.com/prettier@3.3.3/plugins/postcss.mjs";
+  import prettierMarkdown from "https://unpkg.com/prettier@3.3.3/plugins/markdown.mjs";
+
+  "use strict";
+
+  var API = "https://api.github.com";
+  var els = {};
+  ["loadingScreen","connectScreen","tokenInput","showTokenBtn","connectBtn","connectStatus","app",
+   "drawerToggle","repoSelect","branchSelect","fileLabel","fontDown","fontUp","formatBtn","saveBtn","topStatus",
+   "fileDrawerBackdrop","fileDrawer","breadcrumb","fileTree","editorHost","emptyEditor",
+   "quickbar","emmetBtn","undoBtn","redoBtn"
+  ].forEach(function(id){ els[id] = document.getElementById(id); });
+
+  function showScreen(name){
+    els.loadingScreen.style.display = name === "loading" ? "flex" : "none";
+    els.connectScreen.style.display = name === "connect" ? "block" : "none";
+    els.app.classList.toggle("show", name === "app");
+  }
+
+  var TOKEN_KEY = "ghUploader.token"; // shared name with the GitHub tab, reused if the browser shares storage
+  var STATE_KEY = "codeEditor.state.v1";
+  var FONT_KEY = "codeEditor.fontSize";
+
+  var gh = { token:null, owner:null, repo:null, branch:null, path:"" };
+  var openFile = null; // { path, sha, ext }
+  var view = null;
+  var dirty = false;
+  var fontSize = parseInt(localStorage.getItem(FONT_KEY) || "14", 10);
+  document.documentElement.style.setProperty("--editor-fs", fontSize + "px");
+
+  function ghHeaders(){ return { "Authorization": "token " + gh.token, "Accept": "application/vnd.github+json" }; }
+  function encodeApiPath(p){ return p.split("/").filter(Boolean).map(encodeURIComponent).join("/"); }
+  function setStatus(msg, kind){ els.topStatus.textContent = msg||""; els.topStatus.className = kind||""; }
+  function setConnectStatus(msg, kind){ els.connectStatus.textContent = msg||""; els.connectStatus.className = kind||""; }
+  function saveEditorState(){ try{ localStorage.setItem(STATE_KEY, JSON.stringify({owner:gh.owner, repo:gh.repo, branch:gh.branch, path:gh.path, filePath:gh.filePath||null})); }catch(e){} }
+  function loadEditorState(){ try{ return JSON.parse(localStorage.getItem(STATE_KEY)) || {}; }catch(e){ return {}; } }
+  function draftKey(path){ return "codeEditor.draft::" + gh.owner + "/" + gh.repo + "/" + gh.branch + "/" + path; }
+  var pendingFile = null; // last-open file to auto-restore once, right after the matching folder loads
+
+  // ---------------- Auth ----------------
+  els.showTokenBtn.addEventListener("click", function(){ els.tokenInput.type = els.tokenInput.type === "password" ? "text" : "password"; });
+  function connectWithToken(token){
+    setConnectStatus("Checking token…");
+    return fetch(API + "/user", { headers: { Authorization: "token " + token } })
+      .then(function(r){ if (!r.ok) throw new Error(r.status === 401 ? "Token rejected — check it's correct and has repo access." : "GitHub error " + r.status); return r.json(); })
+      .then(function(user){
+        gh.token = token;
+        try{ localStorage.setItem(TOKEN_KEY, token); }catch(e){}
+        setConnectStatus("Connected as " + user.login, "ok");
+        showScreen("app");
+        loadRepos();
+      })
+      .catch(function(err){
+        setConnectStatus(err.message, "err");
+        showScreen("connect");
+      });
+  }
+  els.connectBtn.addEventListener("click", function(){
+    var t = els.tokenInput.value.trim();
+    if (!t){ setConnectStatus("Paste a token first.", "err"); return; }
+    connectWithToken(t);
+  });
+  els.tokenInput.addEventListener("keydown", function(e){ if (e.key === "Enter") els.connectBtn.click(); });
+
+  // ---------------- Repo / branch / tree ----------------
+  function loadRepos(){
+    setStatus("Loading repos…");
+    fetch(API + "/user/repos?per_page=100&sort=updated", { headers: ghHeaders() })
+      .then(function(r){ return r.json(); })
+      .then(function(repos){
+        els.repoSelect.innerHTML = '<option value="">Repo…</option>';
+        repos.forEach(function(r){
+          var opt = document.createElement("option"); opt.value = r.full_name; opt.textContent = r.full_name;
+          els.repoSelect.appendChild(opt);
+        });
+        setStatus(repos.length + " repos", "ok");
+        var saved = loadEditorState();
+        if (saved.owner && saved.repo){
+          var full = saved.owner + "/" + saved.repo;
+          if (repos.some(function(r){return r.full_name===full;})){
+            els.repoSelect.value = full;
+            pendingFile = saved.filePath || null;
+            selectRepo(full, saved.branch, saved.path || "");
+          }
+        }
+      })
+      .catch(function(err){ setStatus("Repo load failed", "err"); });
+  }
+  els.repoSelect.addEventListener("change", function(){ if (els.repoSelect.value) selectRepo(els.repoSelect.value); });
+
+  function selectRepo(fullName, preferBranch, preferPath){
+    var parts = fullName.split("/");
+    gh.owner = parts[0]; gh.repo = parts[1]; gh.path = preferPath || "";
+    setStatus("Loading branches…");
+    fetch(API + "/repos/" + fullName + "/branches?per_page=100", { headers: ghHeaders() })
+      .then(function(r){ return r.json(); })
+      .then(function(branches){
+        els.branchSelect.innerHTML = "";
+        branches.forEach(function(b){ var o=document.createElement("option"); o.value=b.name; o.textContent=b.name; els.branchSelect.appendChild(o); });
+        var target = (preferBranch && branches.some(function(b){return b.name===preferBranch;})) ? preferBranch : (branches[0] && branches[0].name);
+        if (target){ els.branchSelect.value = target; gh.branch = target; }
+        saveEditorState();
+        loadFolder(gh.path);
+      })
+      .catch(function(){ setStatus("Branch load failed", "err"); });
+  }
+  els.branchSelect.addEventListener("change", function(){ gh.branch = els.branchSelect.value; gh.path=""; saveEditorState(); loadFolder(""); });
+
+  function renderBreadcrumb(){
+    var parts = gh.path ? gh.path.split("/") : [];
+    var html2 = '<span data-path="">' + (gh.repo||"repo") + "</span>";
+    var acc = "";
+    parts.forEach(function(p){ acc = acc ? acc+"/"+p : p; html2 += " / <span data-path=\""+acc+"\">"+p+"</span>"; });
+    els.breadcrumb.innerHTML = html2;
+    Array.prototype.slice.call(els.breadcrumb.querySelectorAll("span")).forEach(function(s){
+      s.addEventListener("click", function(){ gh.path = s.getAttribute("data-path"); saveEditorState(); loadFolder(gh.path); });
+    });
+  }
+  function loadFolder(path){
+    if (!gh.owner || !gh.repo || !gh.branch) return;
+    gh.path = path || "";
+    renderBreadcrumb();
+    els.fileTree.innerHTML = "";
+    setStatus("Loading…");
+    var url = API + "/repos/" + gh.owner + "/" + gh.repo + "/contents/" + encodeApiPath(gh.path) + "?ref=" + encodeURIComponent(gh.branch);
+    fetch(url, { headers: ghHeaders() })
+      .then(function(r){ if (!r.ok) throw new Error("GitHub error " + r.status); return r.json(); })
+      .then(function(entries){
+        if (!Array.isArray(entries)) entries = [];
+        entries.sort(function(a,b){ if (a.type!==b.type) return a.type==="dir"?-1:1; return a.name.localeCompare(b.name); });
+        entries.forEach(function(entry){
+          var row = document.createElement("div");
+          row.className = "row-item";
+          row.innerHTML = '<span>' + (entry.type==="dir"?"📁":"📄") + '</span><span class="nm">' + entry.name + "</span>";
+          row.addEventListener("click", function(){
+            if (entry.type === "dir"){ gh.path = entry.path; saveEditorState(); loadFolder(gh.path); }
+            else openFileInEditor(entry.path, entry.sha);
+          });
+          els.fileTree.appendChild(row);
+        });
+        setStatus("Ready", "ok");
+        closeDrawer();
+        if (pendingFile){ var pf = pendingFile; pendingFile = null; openFileInEditor(pf); }
+      })
+      .catch(function(err){ setStatus(err.message, "err"); });
+  }
+
+  // ---------------- Base64 helpers ----------------
+  function b64Decode(b64){
+    var binary = atob(b64.replace(/\n/g, ""));
+    var bytes = Uint8Array.from(binary, function(c){ return c.charCodeAt(0); });
+    return new TextDecoder("utf-8").decode(bytes);
+  }
+  function b64Encode(str){
+    var bytes = new TextEncoder().encode(str);
+    var binary = "";
+    bytes.forEach(function(b){ binary += String.fromCharCode(b); });
+    return btoa(binary);
+  }
+
+  // ---------------- Language detection ----------------
+  function extOf(path){ var m = /\.([a-z0-9]+)$/i.exec(path); return m ? m[1].toLowerCase() : ""; }
+  function langExtensionFor(ext){
+    if (ext === "html" || ext === "htm") return html();
+    if (ext === "css") return css();
+    if (ext === "js" || ext === "mjs" || ext === "jsx") return javascript({ jsx: ext === "jsx" });
+    if (ext === "ts" || ext === "tsx") return javascript({ jsx: ext === "tsx", typescript: true });
+    if (ext === "json") return json();
+    if (ext === "md" || ext === "markdown") return markdown();
+    return null;
+  }
+  function prettierConfigFor(ext){
+    if (ext === "html" || ext === "htm") return { parser: "html", plugins: [prettierHtml, prettierPostcss, prettierBabel, prettierEstree] };
+    if (ext === "css" || ext === "scss" || ext === "less") return { parser: "css", plugins: [prettierPostcss] };
+    if (ext === "js" || ext === "mjs" || ext === "jsx" || ext === "ts" || ext === "tsx") return { parser: "babel", plugins: [prettierBabel, prettierEstree] };
+    if (ext === "json") return { parser: "json", plugins: [prettierBabel, prettierEstree] };
+    if (ext === "md" || ext === "markdown") return { parser: "markdown", plugins: [prettierMarkdown] };
+    return null;
+  }
+
+  // ---------------- Editor lifecycle ----------------
+  var draftTimer = null;
+  function makeEditor(content, ext){
+    els.editorHost.innerHTML = "";
+    var extensions = [basicSetup, oneDark, indentUnit.of("  "), EditorView.lineWrapping,
+      EditorView.updateListener.of(function(u){
+        if (!u.docChanged) return;
+        markDirty();
+        clearTimeout(draftTimer);
+        draftTimer = setTimeout(function(){
+          if (!openFile) return;
+          try{ localStorage.setItem(draftKey(openFile.path), view.state.doc.toString()); }catch(e){}
+        }, 600);
+      })];
+    var lang = langExtensionFor(ext);
+    if (lang) extensions.push(lang);
+    view = new EditorView({
+      state: EditorState.create({ doc: content, extensions: extensions }),
+      parent: els.editorHost
+    });
+  }
+  function markDirty(){ dirty = true; els.fileLabel.classList.add("dirty"); }
+  function clearDirty(){ dirty = false; els.fileLabel.classList.remove("dirty"); }
+
+  function openFileInEditor(path, knownSha){
+    if (dirty && !confirm("Switch files? Your unsaved draft for " + (openFile?openFile.path:"this file") + " stays saved locally and will be offered again next time you open it.")) return;
+    setStatus("Opening " + path + "…");
+    var url = API + "/repos/" + gh.owner + "/" + gh.repo + "/contents/" + encodeApiPath(path) + "?ref=" + encodeURIComponent(gh.branch);
+    fetch(url, { headers: ghHeaders() })
+      .then(function(r){ if (!r.ok) throw new Error("Couldn't load file (" + r.status + ")"); return r.json(); })
+      .then(function(data){
+        var remoteContent = data.encoding === "base64" ? b64Decode(data.content) : data.content;
+        openFile = { path: path, sha: data.sha, ext: extOf(path) };
+        var draft = null;
+        try{ draft = localStorage.getItem(draftKey(path)); }catch(e){}
+        var hasDraft = draft !== null && draft !== remoteContent;
+        makeEditor(hasDraft ? draft : remoteContent, openFile.ext);
+        if (hasDraft){ markDirty(); setStatus("Restored an unsaved draft for this file — tap Save to commit it", "ok"); }
+        else { clearDirty(); setStatus("Loaded", "ok"); }
+        els.fileLabel.textContent = path;
+        gh.filePath = path;
+        saveEditorState();
+        Array.prototype.slice.call(els.fileTree.querySelectorAll(".row-item")).forEach(function(r){ r.classList.remove("active"); });
+      })
+      .catch(function(err){ setStatus(err.message, "err"); });
+  }
+
+  els.saveBtn.addEventListener("click", function(){
+    if (!openFile || !view){ setStatus("No file open", "err"); return; }
+    var content = view.state.doc.toString();
+    setStatus("Saving…");
+    var body = {
+      message: "Edit " + openFile.path + " via Device Suite",
+      content: b64Encode(content),
+      branch: gh.branch,
+      sha: openFile.sha
+    };
+    fetch(API + "/repos/" + gh.owner + "/" + gh.repo + "/contents/" + encodeApiPath(openFile.path), {
+      method: "PUT",
+      headers: Object.assign({ "Content-Type": "application/json" }, ghHeaders()),
+      body: JSON.stringify(body)
+    })
+      .then(function(r){ if (!r.ok) return r.json().then(function(d){ throw new Error(d.message || ("Error " + r.status)); }); return r.json(); })
+      .then(function(data){
+        openFile.sha = data.content.sha;
+        try{ localStorage.removeItem(draftKey(openFile.path)); }catch(e){}
+        clearDirty();
+        setStatus("Saved ✓", "ok");
+      })
+      .catch(function(err){ setStatus("Save failed: " + err.message, "err"); });
+  });
+
+  els.formatBtn.addEventListener("click", function(){
+    if (!openFile || !view){ return; }
+    var cfg = prettierConfigFor(openFile.ext);
+    if (!cfg){ setStatus("No formatter for ." + openFile.ext, "err"); return; }
+    setStatus("Formatting…");
+    prettier.format(view.state.doc.toString(), cfg)
+      .then(function(out){
+        view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: out } });
+        setStatus("Formatted ✓", "ok");
+      })
+      .catch(function(err){ setStatus("Format error: " + err.message.split("\n")[0], "err"); });
+  });
+
+  els.emmetBtn.addEventListener("click", function(){
+    if (!view) return;
+    var pos = view.state.selection.main.head;
+    var line = view.state.doc.lineAt(pos);
+    var textBefore = line.text.slice(0, pos - line.from);
+    var m = /([a-zA-Z0-9.#>*+^$@\[\]()="':_-]+)$/.exec(textBefore);
+    if (!m){ setStatus("Cursor isn't after an abbreviation", "err"); return; }
+    var abbr = m[1];
+    var syntax = (openFile && openFile.ext === "css") ? "css" : "html";
+    try{
+      var expanded = expandEmmet(abbr, { syntax: syntax });
+      var from = pos - abbr.length;
+      view.dispatch({ changes: { from: from, to: pos, insert: expanded }, selection: { anchor: from + expanded.length } });
+      view.focus();
+    }catch(err){ setStatus("Emmet couldn't expand that", "err"); }
+  });
+
+  els.undoBtn.addEventListener("click", function(){ if (view) view.dispatch({ userEvent: "undo" }); import("https://esm.sh/@codemirror/commands@6.6.0").then(function(m){ m.undo(view); }); });
+  els.redoBtn.addEventListener("click", function(){ import("https://esm.sh/@codemirror/commands@6.6.0").then(function(m){ m.redo(view); }); });
+
+  Array.prototype.slice.call(els.quickbar.querySelectorAll("button[data-ins]")).forEach(function(btn){
+    btn.addEventListener("click", function(){
+      if (!view) return;
+      var ch = btn.getAttribute("data-ins");
+      var pos = view.state.selection.main.head;
+      view.dispatch({ changes: { from: pos, insert: ch }, selection: { anchor: pos + ch.length } });
+      view.focus();
+    });
+  });
+
+  els.fontUp.addEventListener("click", function(){ fontSize = Math.min(24, fontSize+1); applyFont(); });
+  els.fontDown.addEventListener("click", function(){ fontSize = Math.max(10, fontSize-1); applyFont(); });
+  function applyFont(){ document.documentElement.style.setProperty("--editor-fs", fontSize+"px"); try{ localStorage.setItem(FONT_KEY, String(fontSize)); }catch(e){} }
+
+  function openDrawer(){ els.fileDrawer.classList.add("open"); els.fileDrawerBackdrop.classList.add("open"); }
+  function closeDrawer(){ if (window.innerWidth <= 760){ els.fileDrawer.classList.remove("open"); els.fileDrawerBackdrop.classList.remove("open"); } }
+  els.drawerToggle.addEventListener("click", function(){
+    els.fileDrawer.classList.contains("open") ? closeDrawer() : openDrawer();
+  });
+  els.fileDrawerBackdrop.addEventListener("click", closeDrawer);
+
+  window.addEventListener("beforeunload", function(e){ if (dirty){ e.preventDefault(); e.returnValue = ""; } });
+
+  // ---------------- Boot ----------------
+  var savedToken = null;
+  try{ savedToken = localStorage.getItem(TOKEN_KEY); }catch(e){}
+  if (savedToken){
+    showScreen("loading");
+    connectWithToken(savedToken);
+  } else {
+    showScreen("connect");
+  }
+</script>
+
+</body>
+</html>
