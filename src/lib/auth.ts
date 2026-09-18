@@ -51,6 +51,15 @@ function extractErrorMessage(body: SupabaseAuthResponse, status: number, fallbac
   );
 }
 
+function isEmailNotConfirmed(body: SupabaseAuthResponse): boolean {
+  const text = `${body.error_code || ""} ${body.error_description || ""} ${body.msg || ""}`.toLowerCase();
+  return body.error_code === "email_not_confirmed" || text.includes("email not confirmed") || text.includes("email_not_confirmed");
+}
+
+function authError(message: string, code?: string) {
+  return Object.assign(new Error(message), code ? { code } : {});
+}
+
 export async function signIn(email: string, password: string) {
   if (DEMO_MODE) {
     await setDemoCookie();
@@ -63,8 +72,14 @@ export async function signIn(email: string, password: string) {
   const body = (await response.json().catch(() => ({}))) as SupabaseAuthResponse;
 
   if (!response.ok || !body.access_token || !body.refresh_token || !body.user) {
-    console.error("[signIn] supabase response:", response.status, body);
-    throw new Error(extractErrorMessage(body, response.status, "Supabase sign in failed"));
+    console.error("[signIn] supabase status:", response.status, "error_code:", body.error_code || body.code || "n/a");
+    if (isEmailNotConfirmed(body)) {
+      throw authError(
+        "Please confirm your email before signing in. Check your inbox (and spam folder) for the confirmation link we sent when you signed up.",
+        "EMAIL_NOT_CONFIRMED"
+      );
+    }
+    throw authError(extractErrorMessage(body, response.status, "Supabase sign in failed"));
   }
   await setAuthCookies(body.access_token, body.refresh_token);
   return body.user;
@@ -82,25 +97,26 @@ export async function signUp(email: string, password: string, name: string) {
   });
   const body = (await response.json().catch(() => ({}))) as SupabaseAuthResponse;
 
-  console.log("[signUp] supabase status:", response.status);
-  console.log("[signUp] supabase body:", JSON.stringify(body).slice(0, 800));
+  // Log shape, not contents — the raw body can carry access/refresh tokens
+  // when Supabase returns a session immediately (email confirmation off).
+  console.log("[signUp] supabase status:", response.status, "hasUser:", !!body.user, "hasSession:", !!body.access_token);
 
   if (!response.ok) {
-    console.error("[signUp] non-ok response:", response.status, body);
-    throw new Error(extractErrorMessage(body, response.status, "Supabase signup failed"));
+    console.error("[signUp] non-ok response:", response.status, "error_code:", body.error_code || body.code || "n/a");
+    throw authError(extractErrorMessage(body, response.status, "Supabase signup failed"));
   }
 
   if (!body.user) {
-    console.error("[signUp] 200 but no user object:", body);
-    throw new Error(extractErrorMessage(body, response.status, "Supabase signup returned no user"));
+    console.error("[signUp] 200 but no user object returned");
+    throw authError(extractErrorMessage(body, response.status, "Supabase signup returned no user"));
   }
 
   const identities = Array.isArray(body.user.identities) ? body.user.identities : undefined;
   const alreadyRegistered = identities !== undefined && identities.length === 0;
 
   if (alreadyRegistered) {
-    console.warn("[signUp] account already registered:", email);
-    throw new Error("An account with this email already exists. Please log in instead.");
+    console.warn("[signUp] account already registered for this email");
+    throw authError("An account with this email already exists. Please log in instead.", "ALREADY_REGISTERED");
   }
 
   if (body.access_token && body.refresh_token) {
@@ -121,6 +137,18 @@ async function setAuthCookies(accessToken: string, refreshToken: string) {
   };
   jar.set(ACCESS_COOKIE, accessToken, { ...common, maxAge: 60 * 60 });
   jar.set(REFRESH_COOKIE, refreshToken, { ...common, maxAge: 60 * 60 * 24 * 30 });
+}
+
+export async function resendConfirmation(email: string): Promise<void> {
+  if (DEMO_MODE) return;
+  const response = await authRequest("resend", {
+    method: "POST",
+    body: JSON.stringify({ type: "signup", email }),
+  });
+  if (!response.ok) {
+    const body = (await response.json().catch(() => ({}))) as SupabaseAuthResponse;
+    throw authError(extractErrorMessage(body, response.status, "Could not resend the confirmation email"));
+  }
 }
 
 export async function setAuthCookiesFromTokens(accessToken: string, refreshToken: string) {
