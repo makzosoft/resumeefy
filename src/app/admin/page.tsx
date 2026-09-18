@@ -24,21 +24,37 @@ type Stats = {
 
 export default function AdminPage() {
   const [user, setUser] = useState<CurrentUser>(null);
+  const [authLoaded, setAuthLoaded] = useState(false);
   const [stats, setStats] = useState<Stats | null>(null);
   const [error, setError] = useState("");
 
   useEffect(() => {
-    api<{ user: CurrentUser }>("/api/auth").then((r) => setUser(r.user));
+    api<{ user: CurrentUser }>("/api/auth")
+      .then((r) => setUser(r.user))
+      .finally(() => setAuthLoaded(true));
   }, []);
 
   useEffect(() => {
-    if (!user) return;
+    if (!authLoaded || !user || user.role !== "admin") return;
     api<Stats>("/api/admin")
       .then(setStats)
       .catch((e) => setError(e.message));
-  }, [user]);
+  }, [authLoaded, user]);
 
-  if (user && user.role !== "admin") {
+  if (!authLoaded) {
+    return <div className="max-w-2xl mx-auto px-6 py-20 text-center">Checking your session…</div>;
+  }
+  if (!user) {
+    return (
+      <div className="max-w-2xl mx-auto px-6 py-20 text-center">
+        <p>Sign in with an admin account to view this page.</p>
+        <a href="/login?next=/admin" className="btn btn-primary mt-5 inline-flex">
+          Log in
+        </a>
+      </div>
+    );
+  }
+  if (user.role !== "admin") {
     return <div className="max-w-2xl mx-auto px-6 py-20 text-center">This page is for admins only.</div>;
   }
   if (error) return <div className="max-w-2xl mx-auto px-6 py-20 text-center text-[var(--coral)]">{error}</div>;
