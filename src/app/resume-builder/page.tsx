@@ -151,7 +151,7 @@ function ResumeBuilderInner() {
       setGenerated({ experience: result.experience, education: result.education, certifications: result.certifications, projects: result.projects, qualityChecks: result.qualityChecks });
       track("resume_ai_generated", { rulesVersion: RESUMEEFY_CV_RULES_VERSION });
     } catch (err) {
-      alert(err instanceof Error ? err.message : "Could not generate your CV. Check OPENAI_API_KEY and try again.");
+      alert(err instanceof Error ? err.message : "Could not generate your CV. Please try again in a moment.");
     } finally { setGenerating(false); }
   }
 
