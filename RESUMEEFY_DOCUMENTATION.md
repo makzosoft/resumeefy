@@ -39,7 +39,7 @@ Admins can review affiliate performance, referred emails, clicks, signups, sales
 
 The `/api/blog?action=autopublish` endpoint is protected by `CRON_SECRET` and is scheduled ten times each day by Supabase Cron.
 
-Each run tries to collect Google Trends Nigeria RSS signals and TikTok Creative Center signals. If a source is unavailable, the other source or a small evergreen fallback topic set is used. OpenAI turns the signals into a short original career article, then the post is stored in Supabase.
+Each run tries to collect Google Trends Nigeria RSS signals and TikTok Creative Center signals. If a source is unavailable, the other source or a small evergreen fallback topic set is used. Gemini turns the signals into a short original career article, then the post is stored in Supabase.
 
 AutoBlog does not copy source text. Trend signals are context only. If a platform changes its public page structure, the fallback still allows publishing, but production monitoring should be added for source quality.
 
@@ -112,11 +112,8 @@ Required production variables:
 - `SUPABASE_URL`
 - `SUPABASE_ANON_KEY`
 - `SUPABASE_SERVICE_ROLE_KEY`
-- `OPENAI_API_KEY`
-- `OPENAI_MODEL`
-- `OPENAI_TTS_MODEL`
-- `OPENAI_TTS_VOICE`
-- `OPENAI_TTS_SPEED`
+- `GEMINI_API_KEYS`
+- `GEMINI_MODEL`
 - `FLW_SECRET_KEY`
 - `FLW_WEBHOOK_HASH`
 - `GOOGLE_APPS_SCRIPT_URL`
@@ -270,16 +267,13 @@ In Vercel, add:
 - `SUPABASE_URL`
 - `SUPABASE_ANON_KEY`
 - `SUPABASE_SERVICE_ROLE_KEY`
-- `OPENAI_API_KEY`
+- `GEMINI_API_KEYS`
 - `FLW_SECRET_KEY`
 - `FLW_WEBHOOK_HASH`
 - `APP_URL`
-- `OPENAI_MODEL`
-- `OPENAI_TTS_MODEL`
-- `OPENAI_TTS_VOICE`
-- `OPENAI_TTS_SPEED`
+- `GEMINI_MODEL`
 
-Never use `NEXT_PUBLIC_` for the service role key, OpenAI key or Flutterwave secret.
+Never use `NEXT_PUBLIC_` for the service role key, Gemini key or Flutterwave secret.
 
 ## 4. Authentication
 
@@ -301,7 +295,7 @@ Supabase stores application tracking events. `code.gs` remains the Google Apps S
 
 ## 7. Vercel
 
-Deploy the Next.js project to Vercel. The current app keeps the API surface consolidated into 8 route handlers. Supabase is the actual backend and database platform; Vercel runs the web application and thin server-side integrations.
+Deploy the Next.js project to Vercel. The current app keeps the API surface consolidated into 9 route handlers (see the API footprint list below). Supabase is the actual backend and database platform; Vercel runs the web application and thin server-side integrations.
 
 
 ---
@@ -315,7 +309,7 @@ Deploy the Next.js project to Vercel. The current app keeps the API surface cons
 - **Vercel**: Next.js application hosting, rendering and a small secure HTTP integration layer.
 - **Supabase**: primary backend platform, authentication, PostgreSQL database, RLS and scheduled jobs.
 - **Google Apps Script + Google Sheets**: analytics reporting layer.
-- **OpenAI**: AI generation and voice services, accessed server side.
+- **Google Gemini**: AI generation, accessed server side. (Server-side voice/TTS has been disabled — the assessment uses the browser's built-in speech engine.)
 - **Flutterwave**: payment processing, accessed server side.
 
 ## API footprint
@@ -355,7 +349,7 @@ Supabase Auth is the source of truth for identities and passwords. Resumeefy sto
 Only server side variables may contain:
 
 - `SUPABASE_SERVICE_ROLE_KEY`
-- `OPENAI_API_KEY`
+- `GEMINI_API_KEYS`
 - `FLW_SECRET_KEY`
 - `FLW_WEBHOOK_HASH`
 
@@ -415,4 +409,4 @@ The reward is intentionally small so that sharing acts as a motivation to discov
 Admin analytics record user referrals and daily login rewards separately from paid affiliate activity. This makes it possible to measure whether the incentives increase activation, retention, referrals and subsequent credit purchases without confusing ordinary users with affiliates.
 
 ## Demo Mode
-Set `RESUMEEFY_DEMO_MODE=true` to run the product locally without Supabase, OpenAI or Flutterwave credentials. Demo mode provides an in-process demo data store, demo authentication, sample AI responses and simulated credit purchases. Set it to `false` to restore the normal production integrations. Demo data is not durable and should never be treated as production data.
+Set `RESUMEEFY_DEMO_MODE=true` to run the product locally without Supabase, Gemini or Flutterwave credentials. Demo mode provides an in-process demo data store, demo authentication, sample AI responses and simulated credit purchases. Set it to `false` (or omit it) to restore the normal production integrations. Demo data is not durable and should never be treated as production data.
