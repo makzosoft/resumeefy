@@ -1,10 +1,20 @@
 const url = process.env.SUPABASE_URL;
 const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const email = process.env.ADMIN_EMAIL || "admin@resumeefy.site";
-const password = process.env.ADMIN_PASSWORD || "admin123";
 const name = process.env.ADMIN_NAME || "Resumeefy Admin";
 
 if (!url || !key) throw new Error("Set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY first");
+
+// SECURITY: there is no fallback password here on purpose. This used to
+// default to "admin123" when ADMIN_PASSWORD was unset, which meant any
+// deployment that forgot to set it got a real admin account anyone could log
+// into by guessing a well-known default. Set a strong, unique password.
+const password = process.env.ADMIN_PASSWORD;
+if (!password || password.length < 12) {
+  throw new Error(
+    "Set ADMIN_PASSWORD to a strong, unique password (12+ characters) before running this script. There is no default."
+  );
+}
 
 async function request(path, init = {}) {
   return fetch(`${url}${path}`, {
