@@ -41,6 +41,11 @@ create table if not exists public.resumes (
   updated_at timestamptz not null default now()
 );
 
+-- NOTE: not currently written to or read by the app — resume unlocks are paid
+-- for out of the credit wallet (see credit_purchases/credit_transactions
+-- below), not through a direct one-off payment per resume. This table is
+-- left in place (dropping it is a manual decision, not something a schema
+-- file should do for you) in case a future direct-payment flow needs it.
 create table if not exists public.payments (
   id text primary key,
   user_id uuid not null references public.users(id) on delete cascade,
@@ -145,6 +150,20 @@ create table if not exists public.course_submissions (
   unlock_credit_cost integer not null default 20,
   created_at timestamptz not null default now()
 );
+
+-- Course completion certificates. Previously "course_certificate" charged
+-- credits and returned an id that was never stored anywhere, so nothing
+-- could be verified or listed later — this table is what src/lib/data.ts's
+-- saveCourseCertificate/getCourseCertificates now read and write.
+create table if not exists public.course_certificates (
+  id text primary key,
+  user_id uuid not null references public.users(id) on delete cascade,
+  course_id text not null references public.courses(id) on delete cascade,
+  certificate_id text not null unique,
+  created_at timestamptz not null default now()
+);
+create index if not exists idx_course_certificates_user on public.course_certificates(user_id);
+alter table public.course_certificates enable row level security;
 
 create table if not exists public.blog_posts (
   id text primary key,
@@ -292,23 +311,9 @@ on conflict(user_id) do nothing;
 
 
 -- Affiliate referral system. Attribution is first-party and expires after 60 days.
-create table if not exists public.affiliates (
-  id text primary key,
-  user_id uuid not null unique references public.users(id) on delete cascade,
-  code text not null unique,
-  display_name text not null default '',
-  status text not null default 'active' check (status in ('active','suspended','pending')),
-  commission_rate numeric(5,4) not null default 0.40,
-  total_clicks bigint not null default 0,
-  total_signups bigint not null default 0,
-  total_sales bigint not null default 0,
-  total_credits bigint not null default 0,
-  total_commission numeric(18,2) not null default 0,
-  pending_commission numeric(18,2) not null default 0,
-  paid_commission numeric(18,2) not null default 0,
-  created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now()
-);
+-- (public.affiliates was already created above, alongside affiliate_commissions,
+-- for the credit-purchase commission flow — this section adds the click/lead/
+-- attribution tracking tables that sit on top of it.)
 
 -- Stores referred email signups before and after account creation so affiliate attribution
 -- remains auditable and can be reconciled with future credit purchases.
@@ -347,18 +352,8 @@ create table if not exists public.affiliate_attributions (
   created_at timestamptz not null default now()
 );
 
-create table if not exists public.affiliate_commissions (
-  id text primary key,
-  affiliate_id text not null references public.affiliates(id) on delete cascade,
-  user_id uuid references public.users(id) on delete set null,
-  purchase_id text not null unique references public.credit_purchases(id) on delete cascade,
-  amount numeric(18,2) not null,
-  currency text not null,
-  rate numeric(5,4) not null default 0.40,
-  status text not null default 'pending' check (status in ('pending','approved','paid','reversed')),
-  created_at timestamptz not null default now(),
-  paid_at timestamptz
-);
+-- (public.affiliate_commissions was already created above; see the note near
+-- the first public.affiliates definition.)
 
 create table if not exists public.affiliate_payout_requests (
   id text primary key,
