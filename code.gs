@@ -13,8 +13,9 @@
  *
  * IMPORTANT:
  * - Passwords are NEVER stored in plaintext.
- * - The initial password is admin123 only so the first login works.
- * - Change it immediately with changeAdminPassword().
+ * - The first-run admin password is randomly generated and printed ONCE to
+ *   the Apps Script execution log (View > Logs after running setupSystem).
+ *   Copy it from there and change it immediately with changeAdminPassword().
  * - Use the web app URL as an environment variable in Resumeefy.
  */
 
@@ -22,7 +23,6 @@ const CONFIG = Object.freeze({
   APP_NAME: 'Resumeefy',
   VERSION: '2.0.0',
   INITIAL_ADMIN_USERNAME: 'admin',
-  INITIAL_ADMIN_PASSWORD: 'admin123',
   SESSION_TTL_SECONDS: 6 * 60 * 60,
   LOGIN_MAX_ATTEMPTS: 5,
   LOGIN_WINDOW_SECONDS: 15 * 60,
@@ -236,8 +236,14 @@ function seedAdmin_(ss) {
   const existing = rows.find(r => String(r[1]).toLowerCase() === CONFIG.INITIAL_ADMIN_USERNAME);
 
   if (!existing) {
+    // SECURITY: this used to hash a hardcoded 'admin123' default here, which
+    // meant any deployment where the operator forgot the manual
+    // changeAdminPassword() step was reachable with a well-known password.
+    // Generate a random one instead and print it once — it is not
+    // recoverable after this log line scrolls away, so change it promptly.
+    const initialPassword = randomHex_(12);
     const salt = randomHex_(16);
-    const hash = hashPassword_(CONFIG.INITIAL_ADMIN_PASSWORD, salt);
+    const hash = hashPassword_(initialPassword, salt);
     sheet.appendRow([
       'adm_' + randomHex_(8),
       CONFIG.INITIAL_ADMIN_USERNAME,
@@ -250,6 +256,12 @@ function seedAdmin_(ss) {
       0,
       ''
     ]);
+    Logger.log(
+      'Created admin user "%s" with a random initial password: %s\n' +
+      'Copy it now — log in once, then call changeAdminPassword() immediately. This will not be logged again.',
+      CONFIG.INITIAL_ADMIN_USERNAME,
+      initialPassword
+    );
   }
 }
 
@@ -940,6 +952,14 @@ async function signOut(){await call('logout',{token});localStorage.removeItem(KE
 function fmt(n){return Number(n||0).toLocaleString()}
 function money(n){return '₦'+Number(n||0).toLocaleString(undefined,{maximumFractionDigits:2})}
 function card(label,value){return '<div class="card"><div class="kicker">'+label+'</div><div class="value">'+value+'</div></div>'}
+// SECURITY: analytics fields (page path, source, device, event name) come
+// from POST /api/track on the Resumeefy site, which is public and
+// unauthenticated — anyone can submit an event name containing HTML/script.
+// Server-side clean_() only strips control characters, not HTML, so this
+// dashboard must escape before inserting any of that data via innerHTML.
+// Previously it did not, which meant a crafted event/page/device value could
+// run script in this page when an admin viewed the dashboard.
+function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
 async function renderDashboard(){
   const check=await call('admin_check',{token});
   if(!check.ok){localStorage.removeItem(KEY);token=null;return}
@@ -961,10 +981,10 @@ async function load(){
       '<div class="row"><span>Quality score</span><b>'+r.quality.cvQuality+'</b></div><div class="row"><span>ATS score</span><b>'+r.quality.ats+'</b></div><div class="row"><span>Job match</span><b>'+r.quality.jobMatch+'</b></div></div></div>'+
       '<div class="panel"><h3>Interview performance</h3><div class="list"><div class="row"><span>Average score</span><b>'+r.quality.interview+'</b></div><div class="row"><span>Completed</span><b>'+fmt(k.interviewsCompleted)+'</b></div><div class="row"><span>Assessments</span><b>'+fmt(k.assessmentsCompleted)+'</b></div></div></div>'+
       '<div class="panel"><h3>Session health</h3><div class="list"><div class="row"><span>Avg duration</span><b>'+fmt(k.avgSessionSeconds)+'s</b></div><div class="row"><span>Leads</span><b>'+fmt(k.leads)+'</b></div><div class="row"><span>Errors</span><b>'+fmt(k.errors)+'</b></div></div></div></div>'+
-    '<div class="three"><div class="panel"><h3>Top pages</h3><div class="list">'+r.charts.topPages.map(x=>'<div class="row"><span>'+x[0]+'</span><b>'+fmt(x[1])+'</b></div>').join('')+'</div></div>'+
-    '<div class="panel"><h3>Acquisition sources</h3><div class="list">'+r.charts.sources.map(x=>'<div class="row"><span>'+x[0]+'</span><b>'+fmt(x[1])+'</b></div>').join('')+'</div></div>'+
-    '<div class="panel"><h3>Devices</h3><div class="list">'+r.charts.devices.map(x=>'<div class="row"><span>'+x[0]+'</span><b>'+fmt(x[1])+'</b></div>').join('')+'</div></div></div>'+
-    '<div class="panel" style="margin-top:16px"><h3>Recent activity</h3><div class="table-wrap"><table class="table"><thead><tr><th>Time</th><th>Event</th><th>Page</th><th>User</th><th>Device</th></tr></thead><tbody>'+r.recentEvents.map(x=>'<tr><td>'+x.time+'</td><td><span class="pill">'+x.event+'</span></td><td>'+x.page+'</td><td>'+x.user+'</td><td>'+x.device+'</td></tr>').join('')+'</tbody></table></div></div>';
+    '<div class="three"><div class="panel"><h3>Top pages</h3><div class="list">'+r.charts.topPages.map(x=>'<div class="row"><span>'+esc(x[0])+'</span><b>'+fmt(x[1])+'</b></div>').join('')+'</div></div>'+
+    '<div class="panel"><h3>Acquisition sources</h3><div class="list">'+r.charts.sources.map(x=>'<div class="row"><span>'+esc(x[0])+'</span><b>'+fmt(x[1])+'</b></div>').join('')+'</div></div>'+
+    '<div class="panel"><h3>Devices</h3><div class="list">'+r.charts.devices.map(x=>'<div class="row"><span>'+esc(x[0])+'</span><b>'+fmt(x[1])+'</b></div>').join('')+'</div></div></div>'+
+    '<div class="panel" style="margin-top:16px"><h3>Recent activity</h3><div class="table-wrap"><table class="table"><thead><tr><th>Time</th><th>Event</th><th>Page</th><th>User</th><th>Device</th></tr></thead><tbody>'+r.recentEvents.map(x=>'<tr><td>'+esc(x.time)+'</td><td><span class="pill">'+esc(x.event)+'</span></td><td>'+esc(x.page)+'</td><td>'+esc(x.user)+'</td><td>'+esc(x.device)+'</td></tr>').join('')+'</tbody></table></div></div>';
   $('dash').classList.remove('loading');
 }
 if(token) renderDashboard();
