@@ -5,18 +5,32 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { getCurrentSession } from "@/lib/auth";
 import { CREDIT_COSTS, addCredits, saveCourse, spendCredits, trackEvent } from "@/lib/data";
+import { validateResumeCopy } from "@/lib/resume-rules";
 import {
   evaluateInterviewAnswer,
+  generateBlog,
   generateCourse,
   generateDesktopScenario,
   generateInterviewQuestions,
   generateResume,
   scoreResumeQuality,
   matchJob,
-} from "@/lib/openai";
+  type GeneratedResume,
+} from "@/lib/gemini";
+
+// Bounds how large a client-supplied JSON blob (resume / candidate profile) can
+// be before we reject it. These objects are free-form (z.record(unknown)), so
+// there is no per-field limit otherwise — without this, a request could send
+// an arbitrarily large payload straight through to the Gemini API on every
+// call, at the requester's chosen cost to us.
+function sizedRecord(maxChars: number) {
+  return z.record(z.string(), z.unknown()).refine((val) => JSON.stringify(val).length <= maxChars, {
+    message: `This is too large to process (max ${maxChars.toLocaleString()} characters once serialized).`,
+  });
+}
 
 const resumeSchema = z.object({
-  resume: z.record(z.string(), z.unknown()),
+  resume: sizedRecord(30000),
   jobDescription: z.string().max(12000).optional(),
   tier: z.enum(["boost", "professional", "executive", "international"]).optional(),
 });
@@ -24,25 +38,28 @@ const roleSchema = z.object({
   targetRole: z.string().min(2),
   targetCompany: z.string().optional(),
   jobDescription: z.string().max(12000).optional(),
-  candidate: z.record(z.string(), z.unknown()).optional(),
+  candidate: sizedRecord(12000).optional(),
 });
 const feedbackSchema = z.object({
   question: z.string().min(5),
-  answer: z.string().min(10),
+  answer: z.string().min(10).max(6000),
   targetRole: z.string().optional(),
   targetCompany: z.string().optional(),
   jobDescription: z.string().max(12000).optional(),
-  candidate: z.record(z.string(), z.unknown()).optional(),
-  history: z.array(z.unknown()).optional(),
+  candidate: sizedRecord(12000).optional(),
+  history: z.array(z.unknown()).max(50).optional(),
 });
 const courseSchema = z.object({
   targetRole: z.string().min(2).optional(),
   jobDescription: z.string().max(12000).optional(),
-  resume: z.record(z.string(), z.unknown()).optional(),
+  resume: sizedRecord(30000).optional(),
 });
 const matchSchema = z.object({
-  resume: z.record(z.string(), z.unknown()),
+  resume: sizedRecord(30000),
   jobDescription: z.string().min(20).max(12000),
+});
+const blogPreviewSchema = z.object({
+  topic: z.string().min(3).max(200),
 });
 
 async function charge(userId: string, amount: number, feature: string) {
@@ -90,6 +107,31 @@ function fail(e: unknown, action: string) {
   );
 }
 
+// Applies the Resumeefy CV Standard's dash / first-person / filler checks
+// (src/lib/resume-rules.ts) to a generated resume. Previously these checks
+// existed but were never called from anywhere, so nothing enforced them.
+function resumeCopyIssues(resume: GeneratedResume): string[] {
+  const text = [resume.summary, ...resume.experience.flatMap((e) => e.bullets)].join("\n");
+  return validateResumeCopy(text).issues;
+}
+
+async function generateResumeChecked(input: Record<string, unknown>): Promise<GeneratedResume> {
+  const first = await generateResume(input);
+  const issues = resumeCopyIssues(first);
+  if (issues.length === 0) return first;
+
+  console.warn(`[ai:quality] resume failed style check (${issues.join("; ")}) — regenerating once`);
+  try {
+    const retry = await generateResume(input);
+    const retryIssues = resumeCopyIssues(retry);
+    // Keep whichever draft has fewer style violations; never block the user
+    // on this, since the underlying facts are still truthful either way.
+    return retryIssues.length < issues.length ? retry : first;
+  } catch {
+    return first;
+  }
+}
+
 export async function POST(req: NextRequest) {
   const body = (await req.json().catch(() => null)) as Record<string, unknown> | null;
   const action = String(body?.action || req.nextUrl.searchParams.get("action") || "").toLowerCase();
@@ -112,11 +154,11 @@ export async function POST(req: NextRequest) {
       const p = resumeSchema.safeParse(body);
       if (!p.success) return NextResponse.json({ error: "Invalid resume data" }, { status: 400 });
       await chargeFor(CREDIT_COSTS.resume_ai, "resume_ai");
-      return NextResponse.json(await generateResume(p.data));
+      return NextResponse.json(await generateResumeChecked(p.data));
     }
 
     if (action === "resume_quality") {
-      const p = z.object({ resume: z.record(z.string(), z.unknown()) }).safeParse(body);
+      const p = z.object({ resume: sizedRecord(30000) }).safeParse(body);
       if (!p.success) return NextResponse.json({ error: "Invalid resume" }, { status: 400 });
       await chargeFor(CREDIT_COSTS.resume_quality, "resume_quality");
       return NextResponse.json(await scoreResumeQuality(p.data));
@@ -178,6 +220,24 @@ export async function POST(req: NextRequest) {
         recommendations: ["Role foundations", "Tools employers expect", "Portfolio project", "Interview readiness"],
         message: "Your course path will be generated around your target role, resume and job description.",
       });
+    }
+
+    if (action === "blog_preview") {
+      // Public, unauthenticated, uncharged: generates a one-off preview post
+      // for a topic without persisting it. (Previously this action was
+      // checked for but never actually handled, so it always 400'd.)
+      const p = blogPreviewSchema.safeParse(body);
+      if (!p.success) return NextResponse.json({ error: "Provide a topic to preview" }, { status: 400 });
+      const preview = await generateBlog({
+        trendSignals: [p.data.topic],
+        existingTopics: [],
+        brand: "Resumeefy",
+        audience: "job seekers in Nigeria and globally",
+        serviceCatalog: ["resume_builder", "resume_analyzer", "interview", "assessment", "courses", "job_match", "desktop_sim"],
+        marketingRequirement:
+          "Every article must softly promote exactly one relevant Resumeefy service, mentioned naturally once, with a gentle closing next step. Never hype, fake urgency or hard sell.",
+      });
+      return NextResponse.json({ preview });
     }
 
     if (action === "tts") {
