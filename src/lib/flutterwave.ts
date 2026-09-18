@@ -1,3 +1,4 @@
+import crypto from "node:crypto";
 import { DEMO_MODE } from "./demo";
 
 // Real Flutterwave v3 Standard integration.
@@ -82,5 +83,11 @@ export function isValidWebhookSignature(headerHash: string | null): boolean {
   if (DEMO_MODE) return true;
   const expected = process.env.FLW_WEBHOOK_HASH;
   if (!expected || !headerHash) return false;
-  return headerHash === expected;
+  const a = Buffer.from(headerHash);
+  const b = Buffer.from(expected);
+  // Buffers of different lengths would make timingSafeEqual throw, and the
+  // length mismatch itself is not sensitive information, so it's fine to
+  // return false immediately for that case without a timing-safe compare.
+  if (a.length !== b.length) return false;
+  return crypto.timingSafeEqual(a, b);
 }
