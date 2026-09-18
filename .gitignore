@@ -5,11 +5,6 @@
 /.next/
 /out/
 
-# local database (SQLite file, don't commit real data)
-/data/*.db
-/data/*.db-shm
-/data/*.db-wal
-
 # env files (never commit real secrets)
 .env
 .env.local
