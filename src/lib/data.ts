@@ -13,18 +13,43 @@ export async function trackEvent(name: string, opts: { userId?: string | null; m
     meta_json: opts.meta ?? {},
   });
   throwDb(error);
+
   const analyticsUrl = process.env.GOOGLE_APPS_SCRIPT_URL;
   if (analyticsUrl) {
     fetch(analyticsUrl, {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action: "event", eventId, timestamp: new Date().toISOString(), event: name, userId: opts.userId ?? "", properties: opts.meta ?? {} }),
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        action: "event",
+        eventId,
+        timestamp: new Date().toISOString(),
+        event: name,
+        userId: opts.userId ?? "",
+        properties: opts.meta ?? {},
+      }),
       cache: "no-store",
     }).catch(() => {});
   }
 }
 
 export async function getAdminStats() {
-  const [users, leads, assessments, payments, eventCounts, recentEvents, dailySignups, affiliates, affiliateCommissions, affiliatePayouts, referralLeads, blogPosts, blogEvents, userReferrals, dailyRewards] = await Promise.all([
+  const [
+    users,
+    leads,
+    assessments,
+    payments,
+    eventCounts,
+    recentEvents,
+    dailySignups,
+    affiliates,
+    affiliateCommissions,
+    affiliatePayouts,
+    referralLeads,
+    blogPosts,
+    blogEvents,
+    userReferrals,
+    dailyRewards,
+  ] = await Promise.all([
     db.from("users").select("id", { count: "exact", head: true }),
     db.from("leads").select("id", { count: "exact", head: true }),
     db.from("assessments").select("overall_score"),
@@ -32,36 +57,75 @@ export async function getAdminStats() {
     db.from("tracking_events").select("name").order("created_at", { ascending: false }).limit(5000),
     db.from("tracking_events").select("name, meta_json, created_at, users(email)").order("created_at", { ascending: false }).limit(50),
     db.from("users").select("created_at").order("created_at", { ascending: false }).limit(5000),
-    db.from("affiliates").select("id,code,display_name,status,total_clicks,total_signups,total_sales,total_credits,total_commission,pending_commission,paid_commission,payout_account_number,payout_account_name,payout_bank_name").order("total_commission", { ascending: false }).limit(100),
+    db
+      .from("affiliates")
+      .select(
+        "id,code,display_name,status,total_clicks,total_signups,total_sales,total_credits,total_commission,pending_commission,paid_commission,payout_account_number,payout_account_name,payout_bank_name"
+      )
+      .order("total_commission", { ascending: false })
+      .limit(100),
     db.from("affiliate_commissions").select("amount,currency,status,created_at,affiliates(code,display_name)").order("created_at", { ascending: false }).limit(5000),
     db.from("affiliate_payout_requests").select("id,amount,currency,status,created_at,affiliates(code,display_name)").order("created_at", { ascending: false }).limit(200),
     db.from("affiliate_referral_leads").select("email,affiliate_code,user_id,converted_at,expires_at,created_at").order("created_at", { ascending: false }).limit(1000),
-    db.from("blog_posts").select("id,slug,title,topic,primary_keyword,search_intent,word_count,published_at,marketing" ).order("published_at", { ascending: false }).limit(100),
+    db.from("blog_posts").select("id,slug,title,topic,primary_keyword,search_intent,word_count,published_at,marketing").order("published_at", { ascending: false }).limit(100),
     db.from("blog_events").select("blog_id,event,created_at").order("created_at", { ascending: false }).limit(10000),
     db.from("user_referrals").select("id,inviter_user_id,invitee_email,status,inviter_reward,invitee_reward,created_at,completed_at").order("created_at", { ascending: false }).limit(1000),
     db.from("daily_login_rewards").select("id,user_id,reward_date,credits,created_at").order("created_at", { ascending: false }).limit(1000),
   ]);
-  [users, leads, assessments, payments, eventCounts, recentEvents, dailySignups, affiliates, affiliateCommissions, affiliatePayouts, referralLeads, blogPosts, blogEvents, userReferrals, dailyRewards].forEach((r) => throwDb(r.error));
+  [users, leads, assessments, payments, eventCounts, recentEvents, dailySignups, affiliates, affiliateCommissions, affiliatePayouts, referralLeads, blogPosts, blogEvents, userReferrals, dailyRewards].forEach(
+    (r) => throwDb(r.error)
+  );
 
   const scores = (assessments.data ?? []).map((x: any) => Number(x.overall_score)).filter(Number.isFinite);
   const revenue = (payments.data ?? []).reduce((sum: number, x: any) => sum + Number(x.amount || 0), 0);
   const revenueByCurrency: Record<string, number> = {};
+  for (const row of payments.data ?? []) {
+    revenueByCurrency[row.currency] = (revenueByCurrency[row.currency] || 0) + Number(row.amount || 0);
+  }
 
-  for (const row of payments.data ?? []) revenueByCurrency[row.currency] = (revenueByCurrency[row.currency] || 0) + Number(row.amount || 0);
   const counts = new Map<string, number>();
   for (const row of eventCounts.data ?? []) counts.set(row.name, (counts.get(row.name) ?? 0) + 1);
+
   const days = new Map<string, number>();
-  for (const row of dailySignups.data ?? []) { const day = String(row.created_at).slice(0, 10); days.set(day, (days.get(day) ?? 0) + 1); }
+  for (const row of dailySignups.data ?? []) {
+    const day = String(row.created_at).slice(0, 10);
+    days.set(day, (days.get(day) ?? 0) + 1);
+  }
+
   const blogStats = new Map<string, { views: number; shares: number; ctas: number }>();
-  for (const row of blogEvents.data ?? []) { const current = blogStats.get(row.blog_id) ?? { views: 0, shares: 0, ctas: 0 }; if (row.event === "view" || row.event === "read" || row.event === "blog_read" || row.event === "blog_open") current.views++; if (row.event === "share" || row.event === "blog_share") current.shares++; if (row.event === "cta_click" || row.event === "blog_cta_click") current.ctas++; blogStats.set(row.blog_id, current); }
+  for (const row of blogEvents.data ?? []) {
+    const current = blogStats.get(row.blog_id) ?? { views: 0, shares: 0, ctas: 0 };
+    if (row.event === "view" || row.event === "read" || row.event === "blog_read" || row.event === "blog_open") current.views++;
+    if (row.event === "share" || row.event === "blog_share") current.shares++;
+    if (row.event === "cta_click" || row.event === "blog_cta_click") current.ctas++;
+    blogStats.set(row.blog_id, current);
+  }
+
   return {
-    totalUsers: users.count ?? 0, totalLeads: leads.count ?? 0, totalAssessments: assessments.data?.length ?? 0, avgScore: scores.length ? Math.round(scores.reduce((a: number, b: number) => a + b, 0) / scores.length) : 0,
-    totalRevenue: revenue, revenueByCurrency, successfulPayments: payments.data?.length ?? 0, affiliateRevenue: (affiliateCommissions.data ?? []).reduce((s: number, x: any) => s + Number(x.amount || 0), 0),
-    affiliates: affiliates.data ?? [], affiliateCommissions: affiliateCommissions.data ?? [], affiliatePayouts: affiliatePayouts.data ?? [], referralLeads: referralLeads.data ?? [], userReferrals: userReferrals.data ?? [], dailyLoginRewards: dailyRewards.data ?? [],
-    eventCounts: [...counts.entries()].map(([name,count])=>({name,count})).sort((a,b)=>b.count-a.count).slice(0,20),
-    recentEvents: (recentEvents.data ?? []).map((e:any)=>({name:e.name,meta_json:JSON.stringify(e.meta_json??{}),created_at:e.created_at,email:Array.isArray(e.users)?e.users[0]?.email??null:(e.users as any)?.email??null,meta:e.meta_json??{}})),
-    dailySignups: [...days.entries()].sort((a,b)=>b[0].localeCompare(a[0])).slice(0,14).map(([day,count])=>({day,count})),
-    blogProgress: (blogPosts.data ?? []).map((p:any)=>({ ...p, ...(blogStats.get(p.id) ?? {views:0,shares:0,ctas:0}) })),
+    totalUsers: users.count ?? 0,
+    totalLeads: leads.count ?? 0,
+    totalAssessments: assessments.data?.length ?? 0,
+    avgScore: scores.length ? Math.round(scores.reduce((a: number, b: number) => a + b, 0) / scores.length) : 0,
+    totalRevenue: revenue,
+    revenueByCurrency,
+    successfulPayments: payments.data?.length ?? 0,
+    affiliateRevenue: (affiliateCommissions.data ?? []).reduce((s: number, x: any) => s + Number(x.amount || 0), 0),
+    affiliates: affiliates.data ?? [],
+    affiliateCommissions: affiliateCommissions.data ?? [],
+    affiliatePayouts: affiliatePayouts.data ?? [],
+    referralLeads: referralLeads.data ?? [],
+    userReferrals: userReferrals.data ?? [],
+    dailyLoginRewards: dailyRewards.data ?? [],
+    eventCounts: [...counts.entries()].map(([name, count]) => ({ name, count })).sort((a, b) => b.count - a.count).slice(0, 20),
+    recentEvents: (recentEvents.data ?? []).map((e: any) => ({
+      name: e.name,
+      meta_json: JSON.stringify(e.meta_json ?? {}),
+      created_at: e.created_at,
+      email: Array.isArray(e.users) ? e.users[0]?.email ?? null : (e.users as any)?.email ?? null,
+      meta: e.meta_json ?? {},
+    })),
+    dailySignups: [...days.entries()].sort((a, b) => b[0].localeCompare(a[0])).slice(0, 14).map(([day, count]) => ({ day, count })),
+    blogProgress: (blogPosts.data ?? []).map((p: any) => ({ ...p, ...(blogStats.get(p.id) ?? { views: 0, shares: 0, ctas: 0 }) })),
   };
 }
 
@@ -105,8 +169,12 @@ export async function upsertResume(userId: string, resumeId: string | null, data
   return id;
 }
 
-export async function unlockResume(resumeId: string, tier = "boost") {
-  const { error } = await db.from("resumes").update({ is_unlocked: true, selected_tier: tier }).eq("id", resumeId);
+// SECURITY FIX: this previously filtered only by `id`, so any authenticated
+// user could unlock (and rewrite the selected tier of) ANY resume by guessing
+// or otherwise learning its id, regardless of who owned it. Ownership is now
+// required, matching upsertResume/getResume above.
+export async function unlockResume(resumeId: string, userId: string, tier = "boost") {
+  const { error } = await db.from("resumes").update({ is_unlocked: true, selected_tier: tier }).eq("id", resumeId).eq("user_id", userId);
   throwDb(error);
 }
 
@@ -124,28 +192,6 @@ export async function getLatestResume(userId: string) {
   return { id: data.id, data_json: JSON.stringify(data.data_json ?? {}), is_unlocked: data.is_unlocked, updated_at: data.updated_at };
 }
 
-
-export async function createPendingPayment(userId: string, resumeId: string, txRef: string, amount: number) {
-  const { error } = await db.from("payments").insert({ id: newId("pay"), user_id: userId, resume_id: resumeId, tx_ref: txRef, amount });
-  throwDb(error);
-}
-
-export async function markPaymentSuccessful(txRef: string, flwTransactionId: string) {
-  const { error } = await db.from("payments").update({ status: "successful", flw_transaction_id: flwTransactionId, verified_at: new Date().toISOString() }).eq("tx_ref", txRef);
-  throwDb(error);
-}
-
-export async function markPaymentFailed(txRef: string) {
-  const { error } = await db.from("payments").update({ status: "failed" }).eq("tx_ref", txRef);
-  throwDb(error);
-}
-
-export async function getPaymentByTxRef(txRef: string) {
-  const { data, error } = await db.from("payments").select("id, user_id, resume_id, amount, status").eq("tx_ref", txRef).maybeSingle();
-  throwDb(error);
-  return data ?? undefined;
-}
-
 export async function getUserInviteProfile(userId: string) {
   const { data, error } = await db.from("users").select("id,name,email,invite_code").eq("id", userId).maybeSingle();
   throwDb(error);
@@ -159,7 +205,14 @@ export async function recordUserReferral(code: string, email: string, userId?: s
 }
 
 export async function getUserInviteReferralByEmail(email: string) {
-  const { data, error } = await db.from("user_referrals").select("invite_code,status,created_at").eq("invitee_email", email.toLowerCase()).eq("status", "pending").order("created_at", { ascending: false }).limit(1).maybeSingle();
+  const { data, error } = await db
+    .from("user_referrals")
+    .select("invite_code,status,created_at")
+    .eq("invitee_email", email.toLowerCase())
+    .eq("status", "pending")
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
   throwDb(error);
   return data ?? undefined;
 }
@@ -182,9 +235,17 @@ export async function getUserReferralStats(userId: string) {
     db.from("user_referrals").select("invitee_email,status,inviter_reward,completed_at,created_at").eq("inviter_user_id", userId).order("created_at", { ascending: false }).limit(100),
     db.from("credit_transactions").select("amount,created_at,feature,metadata").eq("user_id", userId).eq("type", "user_referral").order("created_at", { ascending: false }).limit(100),
   ]);
-  throwDb(referrals.error); throwDb(rewards.error);
-  const completed = (referrals.data ?? []).filter((r:any) => r.status === "completed");
-  return { profile, referrals: referrals.data ?? [], rewards: rewards.data ?? [], completedCount: completed.length, earned: completed.reduce((sum:number,r:any)=>sum+Number(r.inviter_reward||0),0) };
+  throwDb(referrals.error);
+  throwDb(rewards.error);
+
+  const completed = (referrals.data ?? []).filter((r: any) => r.status === "completed");
+  return {
+    profile,
+    referrals: referrals.data ?? [],
+    rewards: rewards.data ?? [],
+    completedCount: completed.length,
+    earned: completed.reduce((sum: number, r: any) => sum + Number(r.inviter_reward || 0), 0),
+  };
 }
 
 export async function getUserProfile(userId: string) {
@@ -224,12 +285,18 @@ export const INTERNATIONAL_CREDIT_PACKS = [
   { id: "intl_1400", credits: 1400, amount: 100, currency: "USD", label: "Power" },
 ] as const;
 
-export function getCreditPacks(country = "NG") { return country.toUpperCase() === "NG" ? CREDIT_PACKS : INTERNATIONAL_CREDIT_PACKS; }
+export function getCreditPacks(country = "NG") {
+  return country.toUpperCase() === "NG" ? CREDIT_PACKS : INTERNATIONAL_CREDIT_PACKS;
+}
 
 export async function getCreditBalance(userId: string) {
   const { data, error } = await db.from("credit_wallets").select("balance,lifetime_earned,lifetime_spent").eq("user_id", userId).maybeSingle();
   throwDb(error);
-  if (!data) { const { data: created, error: createError } = await db.from("credit_wallets").insert({ user_id: userId, balance: 100, lifetime_earned: 100 }); throwDb(createError); return { balance: 100, lifetimeEarned: 100, lifetimeSpent: 0 }; }
+  if (!data) {
+    const { error: createError } = await db.from("credit_wallets").insert({ user_id: userId, balance: 100, lifetime_earned: 100 });
+    throwDb(createError);
+    return { balance: 100, lifetimeEarned: 100, lifetimeSpent: 0 };
+  }
   return { balance: Number(data.balance), lifetimeEarned: Number(data.lifetime_earned), lifetimeSpent: Number(data.lifetime_spent) };
 }
 
@@ -268,7 +335,7 @@ export async function createAffiliate(userId: string, displayName: string) {
     const code = `RESU${base}`.slice(0, 10) + suffix;
     const existingCode = await getAffiliateByCode(code);
     if (existingCode) continue;
-    const { error } = await db.from("affiliates").insert({ id: newId("aff"), user_id: userId, code, display_name: displayName, status: "active", commission_rate: 0.40 });
+    const { error } = await db.from("affiliates").insert({ id: newId("aff"), user_id: userId, code, display_name: displayName, status: "active", commission_rate: 0.4 });
     if (!error) return getAffiliateByUser(userId);
     if (!/duplicate|unique/i.test(error.message || "")) throwDb(error);
   }
@@ -278,7 +345,13 @@ export async function createAffiliate(userId: string, displayName: string) {
 export async function recordAffiliateClick(code: string, path?: string, source?: string, userAgent?: string) {
   const affiliate = await getAffiliateByCode(code);
   if (!affiliate || affiliate.status !== "active") return null;
-  const result = await (await import("./db")).rpc<any>("record_affiliate_click", { p_affiliate_id: affiliate.id, p_code: affiliate.code, p_path: path ?? null, p_source: source ?? null, p_user_agent: userAgent ?? null });
+  const result = await (await import("./db")).rpc<any>("record_affiliate_click", {
+    p_affiliate_id: affiliate.id,
+    p_code: affiliate.code,
+    p_path: path ?? null,
+    p_source: source ?? null,
+    p_user_agent: userAgent ?? null,
+  });
   throwDb(result.error);
   return affiliate;
 }
@@ -292,13 +365,28 @@ export async function recordAffiliateLead(code: string, email: string, userId?: 
 export async function updateAffiliatePayoutAccount(userId: string, input: { accountNumber: string; accountName?: string; bankName?: string }) {
   const affiliate = await getAffiliateByUser(userId);
   if (!affiliate) throw new Error("Affiliate account not found");
-  const { error } = await db.from("affiliates").update({ payout_account_number: input.accountNumber, payout_account_name: input.accountName ?? null, payout_bank_name: input.bankName ?? null, updated_at: new Date().toISOString() }).eq("id", affiliate.id);
+  const { error } = await db
+    .from("affiliates")
+    .update({
+      payout_account_number: input.accountNumber,
+      payout_account_name: input.accountName ?? null,
+      payout_bank_name: input.bankName ?? null,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", affiliate.id);
   throwDb(error);
   return getAffiliateByUser(userId);
 }
 
 export async function getActiveAffiliateLeadByEmail(email: string) {
-  const { data, error } = await db.from("affiliate_referral_leads").select("affiliate_code,expires_at").eq("email", email.toLowerCase()).gte("expires_at", new Date().toISOString()).order("created_at", { ascending: false }).limit(1).maybeSingle();
+  const { data, error } = await db
+    .from("affiliate_referral_leads")
+    .select("affiliate_code,expires_at")
+    .eq("email", email.toLowerCase())
+    .gte("expires_at", new Date().toISOString())
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
   throwDb(error);
   return data ?? undefined;
 }
@@ -309,17 +397,102 @@ export async function recordAffiliateAttribution(userId: string, code: string) {
   return result.data ?? null;
 }
 
-export async function createCreditPurchase(userId: string, pack: { id: string; credits: number; amount: number; currency: string; rate?: number; country?: string }, txRef: string, affiliate?: { id: string; code: string; commission: number } | null) {
-  const { error } = await db.from("credit_purchases").insert({ id: newId("cp"), user_id: userId, pack_id: pack.id, credits: pack.credits, amount: pack.amount, currency: pack.currency, tx_ref: txRef, affiliate_id: affiliate?.id ?? null, affiliate_code: affiliate?.code ?? null, affiliate_commission: affiliate?.commission ?? 0, affiliate_commission_status: affiliate ? "pending" : "none", currency_rate: pack.rate ?? null, country: pack.country ?? null });
+export async function createCreditPurchase(
+  userId: string,
+  pack: { id: string; credits: number; amount: number; currency: string; rate?: number; country?: string },
+  txRef: string,
+  affiliate?: { id: string; code: string; commission: number } | null
+) {
+  const { error } = await db.from("credit_purchases").insert({
+    id: newId("cp"),
+    user_id: userId,
+    pack_id: pack.id,
+    credits: pack.credits,
+    amount: pack.amount,
+    currency: pack.currency,
+    tx_ref: txRef,
+    affiliate_id: affiliate?.id ?? null,
+    affiliate_code: affiliate?.code ?? null,
+    affiliate_commission: affiliate?.commission ?? 0,
+    affiliate_commission_status: affiliate ? "pending" : "none",
+    currency_rate: pack.rate ?? null,
+    country: pack.country ?? null,
+  });
   throwDb(error);
 }
-export async function getCreditPurchase(txRef: string) { const { data, error } = await db.from("credit_purchases").select("*").eq("tx_ref", txRef).maybeSingle(); throwDb(error); return data ?? undefined; }
-export async function completeCreditPurchase(txRef: string) { const { rpc } = await import("./db"); const result = await rpc<any>("complete_credit_purchase", { p_tx_ref: txRef }); throwDb(result.error); return result.data; }
-export async function failCreditPurchase(txRef: string) { const { error } = await db.from("credit_purchases").update({ status: "failed" }).eq("tx_ref", txRef); throwDb(error); }
 
-export async function saveCourse(userId: string | null, course: Record<string, unknown>) { const id = newId("course"); const { error } = await db.from("courses").insert({ id, user_id: userId, title: course.title, description: course.description, target_role: course.targetRole ?? null, difficulty: course.difficulty ?? null, estimated_hours: course.estimatedHours ?? null, hero_type: course.heroType ?? "svg", hero_asset: course.heroAsset ?? null, content_json: course }); throwDb(error); return id; }
-export async function getCourses(userId: string) { const { data, error } = await db.from("courses").select("*").eq("user_id", userId).order("updated_at", { ascending: false }).limit(20); throwDb(error); return data ?? []; }
-export async function saveCourseSubmission(input: Record<string, unknown>) { const { error } = await db.from("course_submissions").insert({ id: newId("sub"), ...input }); throwDb(error); }
+export async function getCreditPurchase(txRef: string) {
+  const { data, error } = await db.from("credit_purchases").select("*").eq("tx_ref", txRef).maybeSingle();
+  throwDb(error);
+  return data ?? undefined;
+}
+
+export async function completeCreditPurchase(txRef: string) {
+  const { rpc } = await import("./db");
+  const result = await rpc<any>("complete_credit_purchase", { p_tx_ref: txRef });
+  throwDb(result.error);
+  return result.data;
+}
+
+export async function failCreditPurchase(txRef: string) {
+  const { error } = await db.from("credit_purchases").update({ status: "failed" }).eq("tx_ref", txRef);
+  throwDb(error);
+}
+
+export async function saveCourse(userId: string | null, course: Record<string, unknown>) {
+  const id = newId("course");
+  const { error } = await db.from("courses").insert({
+    id,
+    user_id: userId,
+    title: course.title,
+    description: course.description,
+    target_role: course.targetRole ?? null,
+    difficulty: course.difficulty ?? null,
+    estimated_hours: course.estimatedHours ?? null,
+    hero_type: course.heroType ?? "svg",
+    hero_asset: course.heroAsset ?? null,
+    content_json: course,
+  });
+  throwDb(error);
+  return id;
+}
+
+export async function getCourses(userId: string) {
+  const { data, error } = await db.from("courses").select("*").eq("user_id", userId).order("updated_at", { ascending: false }).limit(20);
+  throwDb(error);
+  return data ?? [];
+}
+
+export async function saveCourseSubmission(input: Record<string, unknown>) {
+  const { error } = await db.from("course_submissions").insert({ id: newId("sub"), ...input });
+  throwDb(error);
+}
+
+// Previously course_certificate charged credits and handed back a
+// certificate id that was never written anywhere, so there was no record to
+// list or verify later. This persists it against course_certificates
+// (added in schema.sql).
+export async function saveCourseCertificate(userId: string, courseId: string, certificateId: string) {
+  const { error } = await db.from("course_certificates").insert({
+    id: newId("cert"),
+    user_id: userId,
+    course_id: courseId,
+    certificate_id: certificateId,
+  });
+  throwDb(error);
+  return certificateId;
+}
+
+export async function getCourseCertificates(userId: string) {
+  const { data, error } = await db
+    .from("course_certificates")
+    .select("id,course_id,certificate_id,created_at")
+    .eq("user_id", userId)
+    .order("created_at", { ascending: false })
+    .limit(100);
+  throwDb(error);
+  return data ?? [];
+}
 
 export async function getAffiliateDashboard(userId: string) {
   const affiliate = await getAffiliateByUser(userId);
@@ -329,7 +502,7 @@ export async function getAffiliateDashboard(userId: string) {
     db.from("referral_clicks").select("id,landing_path,source,created_at").eq("affiliate_id", affiliate.id).order("created_at", { ascending: false }).limit(100),
     db.from("affiliate_attributions").select("created_at,first_seen_at,last_seen_at,expires_at").eq("affiliate_id", affiliate.id).order("created_at", { ascending: false }).limit(100),
   ]);
-  [commissions, clicks, attributions].forEach(r => throwDb(r.error));
+  [commissions, clicks, attributions].forEach((r) => throwDb(r.error));
   return { affiliate, commissions: commissions.data ?? [], clicks: clicks.data ?? [], attributions: attributions.data ?? [] };
 }
 
@@ -363,7 +536,26 @@ export async function getAffiliatePayoutRequests() {
   return data ?? [];
 }
 
-export async function saveBlogPost(post: Record<string, unknown>) { const id = newId("blog"); const { error } = await db.from("blog_posts").insert({ id, ...post }); throwDb(error); return id; }
-export async function getBlogPosts(limit = 30) { const { data, error } = await db.from("blog_posts").select("*").order("published_at", { ascending: false }).limit(limit); throwDb(error); return data ?? []; }
-export async function getBlogPostBySlug(slug: string) { const { data, error } = await db.from("blog_posts").select("*").eq("slug", slug).maybeSingle(); throwDb(error); return data ?? undefined; }
-export async function trackBlogEvent(blogId: string, event: string, userId?: string | null, metadata?: Record<string, unknown>) { const { error } = await db.from("blog_events").insert({ id: newId("be"), blog_id: blogId, user_id: userId ?? null, event, metadata: metadata ?? {} }); throwDb(error); }
+export async function saveBlogPost(post: Record<string, unknown>) {
+  const id = newId("blog");
+  const { error } = await db.from("blog_posts").insert({ id, ...post });
+  throwDb(error);
+  return id;
+}
+
+export async function getBlogPosts(limit = 30) {
+  const { data, error } = await db.from("blog_posts").select("*").order("published_at", { ascending: false }).limit(limit);
+  throwDb(error);
+  return data ?? [];
+}
+
+export async function getBlogPostBySlug(slug: string) {
+  const { data, error } = await db.from("blog_posts").select("*").eq("slug", slug).maybeSingle();
+  throwDb(error);
+  return data ?? undefined;
+}
+
+export async function trackBlogEvent(blogId: string, event: string, userId?: string | null, metadata?: Record<string, unknown>) {
+  const { error } = await db.from("blog_events").insert({ id: newId("be"), blog_id: blogId, user_id: userId ?? null, event, metadata: metadata ?? {} });
+  throwDb(error);
+}
