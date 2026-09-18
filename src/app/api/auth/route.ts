@@ -4,7 +4,8 @@ export const dynamic = "force-dynamic";
 import { NextRequest, NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { z } from "zod";
-import { clearSessionCookie, getCurrentSession, setAuthCookiesFromTokens, signIn, signUp } from "@/lib/auth";
+import { clearSessionCookie, getCurrentSession, resendConfirmation, setAuthCookiesFromTokens, signIn, signUp } from "@/lib/auth";
+import { clientKey, rateLimit, tooManyRequests } from "@/lib/rate-limit";
 import {
   createAffiliate,
   recordAffiliateAttribution,
@@ -59,6 +60,10 @@ async function attachReferral(userId: string, email?: string) {
   await claimDailyLoginReward(userId).catch(() => {});
 }
 
+function errorCode(error: unknown): string | undefined {
+  return typeof error === "object" && error && "code" in error ? String((error as any).code) : undefined;
+}
+
 export async function GET() {
   const session = await getCurrentSession();
   if (!session) return NextResponse.json({ user: null });
@@ -93,7 +98,25 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: true });
   }
 
+  if (action === "resend_confirmation") {
+    // Same bucket/limits as signup — this hits the same Supabase endpoint
+    // shape and should not be usable to spam an inbox.
+    const limited = rateLimit(`resend:${clientKey(req)}`, 5, 15 * 60_000);
+    if (!limited.ok) return tooManyRequests(limited.retryAfterMs);
+
+    const parsed = z.object({ email: z.string().email() }).safeParse(body);
+    if (!parsed.success) return NextResponse.json({ error: "Enter a valid email" }, { status: 400 });
+    await resendConfirmation(parsed.data.email).catch(() => {});
+    // Always respond the same way regardless of whether the email exists or
+    // is already confirmed, so this can't be used to check who has signed up.
+    return NextResponse.json({ ok: true, message: "If that account needs confirming, a new email is on its way." });
+  }
+
   if (action === "login") {
+    // Login is the classic brute-force target: cap attempts per IP.
+    const limited = rateLimit(`login:${clientKey(req)}`, 10, 5 * 60_000);
+    if (!limited.ok) return tooManyRequests(limited.retryAfterMs);
+
     const parsed = loginSchema.safeParse(body);
     if (!parsed.success) {
       return NextResponse.json({ error: "Enter a valid email and password" }, { status: 400 });
@@ -114,11 +137,18 @@ export async function POST(req: NextRequest) {
       });
     } catch (error) {
       const message = error instanceof Error ? error.message : "Incorrect email or password";
-      return NextResponse.json({ error: message }, { status: 401 });
+      const code = errorCode(error);
+      // Email-not-confirmed is a different situation from a wrong password —
+      // the account exists, it just needs the link in the confirmation email
+      // clicked first. Use 403 (recognized, not yet allowed) instead of 401.
+      return NextResponse.json({ error: message, code }, { status: code === "EMAIL_NOT_CONFIRMED" ? 403 : 401 });
     }
   }
 
   if (action === "signup") {
+    const limited = rateLimit(`signup:${clientKey(req)}`, 8, 15 * 60_000);
+    if (!limited.ok) return tooManyRequests(limited.retryAfterMs);
+
     const parsed = signupSchema.safeParse(body);
     if (!parsed.success) {
       return NextResponse.json({ error: parsed.error.issues[0].message }, { status: 400 });
@@ -173,14 +203,7 @@ export async function POST(req: NextRequest) {
       });
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : "Unable to create account";
-      const lower = errorMessage.toLowerCase();
-
-      const isDuplicate =
-        lower.includes("already registered") ||
-        lower.includes("already exists") ||
-        lower.includes("duplicate") ||
-        lower.includes("user already") ||
-        lower.includes("email address is already");
+      const isDuplicate = errorCode(error) === "ALREADY_REGISTERED";
 
       if (isDuplicate) {
         try {
@@ -188,6 +211,11 @@ export async function POST(req: NextRequest) {
           const session = await getCurrentSession();
           if (session) {
             await attachReferral(session.sub, session.email);
+            // Same as the non-duplicate signup path: honor a requested
+            // affiliate signup even when the account already existed.
+            if (parsed.data.affiliateSignup) {
+              await createAffiliate(session.sub, session.name).catch(() => {});
+            }
             return NextResponse.json({
               id: session.sub,
               name: session.name,
@@ -195,16 +223,22 @@ export async function POST(req: NextRequest) {
               role: session.role,
             });
           }
-        } catch {
-          // fall through
+        } catch (signInError) {
+          // Wrong password for an existing account, or the account needs
+          // email confirmation — surface that instead of a generic 409.
+          const code = errorCode(signInError);
+          if (code === "EMAIL_NOT_CONFIRMED") {
+            const message = signInError instanceof Error ? signInError.message : errorMessage;
+            return NextResponse.json({ error: message, code }, { status: 403 });
+          }
         }
         return NextResponse.json(
-          { error: "An account with this email already exists. Please log in instead." },
+          { error: "An account with this email already exists. Please log in instead.", code: "ALREADY_REGISTERED" },
           { status: 409 }
         );
       }
 
-      return NextResponse.json({ error: errorMessage }, { status: 409 });
+      return NextResponse.json({ error: errorMessage, code: errorCode(error) }, { status: 409 });
     }
   }
 
