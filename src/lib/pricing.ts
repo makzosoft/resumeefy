@@ -21,10 +21,16 @@ async function usdRates(): Promise<Record<string, number>> {
   const fallback: Record<string, number> = { USD: 1, GBP: 0.75, EUR: 0.86, CAD: 1.37, GHS: 12, KES: 129, ZAR: 17, TZS: 2550, UGX: 3500, RWF: 1450, XAF: 560, XOF: 560, ZMW: 23, MWK: 1750, EGP: 48, SLL: 23000, INR: 88, COP: 3900 };
   try {
     const response = await fetch(process.env.EXCHANGE_RATE_API_URL || "https://open.er-api.com/v6/latest/USD", { next: { revalidate: 3600 } });
-    if (!response.ok) return fallback;
-    const json = await response.json() as { rates?: Record<string, number> };
+    if (!response.ok) {
+      console.warn(`[pricing] FX API returned ${response.status} — using fallback rates (may be stale)`);
+      return fallback;
+    }
+    const json = (await response.json()) as { rates?: Record<string, number> };
     return { ...fallback, ...(json.rates || {}) };
-  } catch { return fallback; }
+  } catch (e) {
+    console.warn("[pricing] FX API fetch failed — using fallback rates (may be stale):", e instanceof Error ? e.message : e);
+    return fallback;
+  }
 }
 
 export async function getLocalizedCreditPacks(country = "NG"): Promise<{ country: string; currency: string; symbol: string; rate: number; packs: LocalizedPack[]; isNigeria: boolean; pricingSource: string }> {
@@ -34,7 +40,13 @@ export async function getLocalizedCreditPacks(country = "NG"): Promise<{ country
   const rates = await usdRates();
   const rate = Number(rates[currency] || 1);
   const packs = INTERNATIONAL_CREDIT_PACKS.map((pack) => ({
-    id: `${currency.toLowerCase()}_${pack.credits}`,
+    // Stable id (e.g. "intl_100"), independent of the resolved currency. The
+    // pricing GET and the purchase POST each resolve country/currency
+    // independently (by IP, which can vary between two requests), so an id
+    // that baked the currency in (e.g. "usd_100") could stop matching
+    // between the two calls. The credits tier is the real identity here;
+    // currency and amount are just how it's priced for this request.
+    id: pack.id,
     credits: pack.credits,
     amount: roundLocal(pack.amount * rate, currency),
     currency,
