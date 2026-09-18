@@ -4,7 +4,7 @@ Resumeefy is a Next.js CV and job-readiness application with authentication, Sup
 
 ## AI setup
 
-The AI features use OpenAI's Responses API from server-side route handlers. The API key is never exposed to the browser.
+AI features run on **Google Gemini** (`src/lib/gemini.ts`), called from server-side route handlers only — the key is never exposed to the browser. Resumeefy does not use OpenAI.
 
 ```bash
 npm install
@@ -14,34 +14,32 @@ cp .env.example .env.local
 Add:
 
 ```env
-OPENAI_API_KEY=your_openai_api_key
-OPENAI_MODEL=gpt-5.6-luna
+GEMINI_API_KEYS=your_gemini_api_key
+GEMINI_MODEL=gemini-2.5-flash
 ```
 
-`OPENAI_MODEL` is optional. The default is GPT-5.6 Luna, chosen for cost-sensitive, high-volume generation. Change it if you prefer another model available to your API account.
+`GEMINI_API_KEYS` accepts a comma-separated list (`key_one,key_two`) — Resumeefy rotates to the next key when one runs out of quota or fails auth. `GEMINI_MODEL` is optional and defaults to `gemini-2.5-flash`.
 
-AI endpoints:
-
-- `POST /api/ai/resume` generates structured CV content using the Resumeefy CV Standard in `src/lib/resume-rules.ts`.
-- `POST /api/ai/interview/questions` generates role and company-aware interview questions dynamically.
-- `POST /api/ai/interview/feedback` evaluates an answer and returns a score, strengths, improvements, a stronger version and a follow-up question.
-
-All AI endpoints require an authenticated session.
+All AI features go through a single consolidated route, `POST /api/ai`, with an `action` field in the body selecting the feature: `resume`, `resume_quality`, `job_match`, `interview_questions`, `interview_feedback`, `desktop`, `course`, `course_recommendation`, or the public/unauthenticated `blog_preview`. Every action except `blog_preview` requires an authenticated session and spends credits (see `CREDIT_COSTS` in `src/lib/data.ts`).
 
 ## Resume generation behaviour
 
-The generator is instructed to preserve candidate facts, avoid fabricated achievements and metrics, keep ATS readability, use consistent tense and alignment-friendly text, and enforce the Resumeefy no-dash punctuation rule. The structured response separates summary, experience, education, certifications, projects, skills and quality checks.
+The generator is instructed to preserve candidate facts, avoid fabricated achievements and metrics, keep ATS readability, use consistent tense and alignment-friendly text, and enforce the Resumeefy no-dash punctuation rule (`src/lib/resume-rules.ts`). Generated copy is checked against those rules after generation, and regenerated once automatically if it fails the check. The structured response separates summary, experience, education, certifications, projects, skills and quality checks.
 
 ## Assessment behaviour
 
-The assessment now adds an adaptive interview round after the role simulation. Questions are generated after the candidate enters the target role and company. Each answer is evaluated before the candidate moves on, making the interview interactive rather than a static question bank.
+The assessment adds an adaptive interview round after the role simulation. Questions are generated after the candidate enters the target role and company. Each answer is evaluated before the candidate moves on, making the interview interactive rather than a static question bank. Course completion certificates (`course_certificate` action) are persisted to `course_certificates` in Supabase and can be listed via `GET /api/assessment?action=certificates`.
+
+## Assessment voice coach
+
+Server-side (Gemini) text-to-speech has been **disabled** — the `tts` action on `/api/ai` returns a `410 TTS_DISABLED` response on purpose. The assessment uses the browser's built-in speech engine only. There is no `OPENAI_TTS_*`/Gemini TTS configuration to set.
 
 ## Other setup
 
-- `APP_URL` is used by Flutterwave redirects.
+- `APP_URL` and `NEXT_PUBLIC_SITE_URL` are used for Flutterwave redirects, sitemap/robots generation, and page metadata.
+- `SUPABASE_URL`, `SUPABASE_ANON_KEY`, and `SUPABASE_SERVICE_ROLE_KEY` are all required — see "Supabase database setup" below. Missing `SUPABASE_ANON_KEY` specifically causes every signup/login request to fail at startup, which can look like "Supabase is broken" when it's really a missing env var.
 - `FLW_SECRET_KEY` and `FLW_WEBHOOK_HASH` are required for payments.
-- Supabase Postgres is stored in `data/` by default. Use a persistent volume or migrate `src/lib/db.ts` to Postgres before production deployment on an ephemeral filesystem platform.
-
+- `RESUMEEFY_DEMO_MODE=true` runs the app against an in-memory demo data store with simulated payments, with no real Supabase/Gemini/Flutterwave credentials needed. Never enable this in production.
 
 Run locally with:
 
@@ -49,82 +47,40 @@ Run locally with:
 npm run dev
 ```
 
-The project was not built as part of this update, per request. Run `npm install` and then `npm run build` locally before deployment.
-
-## Assessment voice coach
-
-The assessment includes an OpenAI generated voice coach that is **enabled by default**. It reads assessment prompts and interview questions at a normal conversational pace. Candidates can switch it off at any point; the preference is remembered in the browser.
-
-Voice configuration lives in `.env.local`:
-
-```env
-OPENAI_TTS_MODEL=gpt-4o-mini-tts
-OPENAI_TTS_VOICE=coral
-OPENAI_TTS_SPEED=1
-# Optional
-# OPENAI_TTS_INSTRUCTIONS=Warm, eloquent female career coach. Natural, calm and encouraging. Normal conversational pace.
-```
-
-The TTS key remains server-side. The app also falls back to the browser speech engine if the OpenAI voice service is unavailable or browser autoplay policy blocks the generated audio.
-
-The current assessment design also includes a local career-coach illustration so the experience is not text-only, with responsive visual treatment on the landing page and interview screen.
+Run `npm install` and then `npm run build` before deploying — this project could not be built inside the environment these fixes were made in (no network access), so treat a clean `npm run build` as a required last step, not optional.
 
 ## Deployment architecture
 
-The API surface is intentionally consolidated to **8 Next.js route handlers** so deployments create fewer serverless functions:
+The API surface is intentionally consolidated so deployments create fewer serverless functions. There are currently **9 Next.js route handlers**:
 
-- `/api/auth` for login, signup, logout, and current session
-- `/api/ai` for CV generation, interview questions, interview feedback, and TTS
-- `/api/payment` for checkout, verification, and Flutterwave webhooks
-- `/api/admin` for protected admin statistics
-- `/api/assessment` for assessment save and history
-- `/api/resume` for resume save and retrieval
-- `/api/leads` for lead capture
-- `/api/track` for product analytics events
+1. `/api/auth` — login, signup, session lookup, logout, resend-confirmation-email
+2. `/api/ai` — CV generation, quality scoring, job matching, interview questions/feedback, desktop simulation, course generation, blog preview
+3. `/api/resume` — resume save, retrieval, and tier unlock
+4. `/api/assessment` — assessment save/retrieval, course submissions, course certificates
+5. `/api/payment` — payment initiation, redirect verification, and the Flutterwave webhook
+6. `/api/blog` — public blog reads, blog event tracking, and the cron-triggered autopublish action
+7. `/api/track` — analytics events, referral/invite tracking, affiliate actions
+8. `/api/leads` — lead capture
+9. `/api/admin` — protected admin statistics (requires `role = admin`)
 
-The Google Apps Script analytics backend is included at `code.gs`. Deploy it as the analytics Web App and run `setupSystem()` once in the bound Google Sheet. Configure the Flutterwave webhook URL to use `/api/payment?action=webhook`.
-
-## Vercel serverless architecture
-
-Resumeefy is structured for Vercel deployment with a deliberately consolidated API surface. There are currently **8 Next.js API route handlers**, so the application stays below the requested 10 serverless function threshold.
-
-API surface:
-
-1. `/api/auth` — login, signup, session lookup and logout
-2. `/api/ai` — CV generation, interview questions, interview feedback and TTS
-3. `/api/resume` — resume save and retrieval
-4. `/api/assessment` — assessment save and retrieval
-5. `/api/payment` — payment initiation, redirect verification and Flutterwave webhook
-6. `/api/track` — analytics event collection
-7. `/api/leads` — lead capture
-8. `/api/admin` — protected admin statistics
-
-Each API route explicitly uses the **Node.js runtime**, which is required by the current Supabase Postgres/Supabase Postgres implementation.
-
-`code.gs` is included at the project root and runs independently on Google Apps Script. It is **not** a Vercel serverless function.
-
-### Important Vercel data note
-
-The current application still uses Supabase Postgres through `Supabase Postgres`. Vercel serverless instances have ephemeral local storage, so Supabase Postgres should not be treated as a permanent production datastore. The included Google Apps Script system is intended for analytics. For durable production user, resume and payment records, migrate the application datastore to a hosted database before relying on Vercel for long-term persistence.
-
-### Function-count verification
-
-Before deployment, run:
+Each API route explicitly uses the **Node.js runtime**. Verify the count before deployment:
 
 ```bash
 find src/app/api -name route.ts | sort
 ```
 
-The project should report exactly 8 API route handlers unless you intentionally add another route. Keep the total below 10.
+`code.gs` is a separate, optional Google Apps Script analytics dashboard that runs independently on Google Apps Script — it is **not** a Vercel serverless function, and the Next.js app only ever calls it for one thing: a generic `action: "event"` POST per tracked event (see `trackEvent` in `src/lib/data.ts`). Its own Users/Resumes/Interviews/Payments/Leads sheets and admin login system are not otherwise wired up to the live app; the canonical record is always Supabase. Deploy it as a Web App and run `setupSystem()` once in the bound Google Sheet if you want it — it's entirely optional. On first run it prints a random initial admin password to the Apps Script execution log (View > Logs); copy it and call `changeAdminPassword()` immediately.
 
 ## Supabase database setup
 
-Run `src/lib/schema.sql` once in the Supabase SQL Editor. Add `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` to Vercel environment variables. The service role key is server-only and must never be prefixed with `NEXT_PUBLIC_`.
+Run `src/lib/schema.sql` once in the Supabase SQL Editor (it's idempotent — `create table if not exists` / `add column if not exists` throughout — so re-running it is safe). Supabase Postgres is the durable, primary datastore for users, resumes, credits, courses, and blog content; it is not ephemeral and does not need a separate migration before production use. Add `SUPABASE_URL`, `SUPABASE_ANON_KEY`, and `SUPABASE_SERVICE_ROLE_KEY` to your environment. The service role key is server-only and must never be prefixed with `NEXT_PUBLIC_` or sent to the browser.
 
-## Production architecture update
+To create the first admin account, set `ADMIN_EMAIL`, `ADMIN_NAME`, and a strong `ADMIN_PASSWORD` (12+ characters — there is no default) and run:
 
-Supabase is the primary backend: Auth, Postgres, credit wallet, transactions, courses, submissions and blog data. Vercel hosts the Next.js application and nine thin Node.js API route handlers. The project has no SQLite dependency.
+```bash
+node scripts/seed-admin.mjs
+```
 
-Google Apps Script remains the reporting analytics layer. Server-side tracking events are mirrored to the configured `GOOGLE_APPS_SCRIPT_URL` in near real time while the canonical event record remains in Supabase.
+## AutoBlog
 
-AutoBlog is scheduled by Supabase Cron rather than Vercel Cron so ten publishing runs per day do not depend on a Vercel Hobby cron allowance. See `SUPABASE_AUTOBLOG_SETUP.sql`.
+`POST /api/blog?action=autopublish` generates and publishes a blog post from current trend signals, guarded by a `CRON_SECRET` bearer token. `SUPABASE_AUTOBLOG_SETUP.sql` schedules this via Supabase Cron (so up to ten runs a day don't depend on a Vercel Hobby plan's cron allowance) — it contains two placeholders (`YOUR-VERCEL-DOMAIN`, `YOUR_CRON_SECRET`) that **must** be replaced with your real values before running it, or the scheduled job will silently fail every time.
