@@ -3,6 +3,7 @@ import { Suspense, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { api, safeNext } from "@/lib/client";
+import { DEMO_MODE_PUBLIC } from "@/lib/demo";
 
 function SignupInner() {
   const router = useRouter();
@@ -15,6 +16,7 @@ function SignupInner() {
   const [error, setError] = useState("");
   const [checkEmailMessage, setCheckEmailMessage] = useState("");
   const [loading, setLoading] = useState(false);
+  const [devLoading, setDevLoading] = useState(false);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -43,6 +45,20 @@ function SignupInner() {
       }
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function devSkip() {
+    setDevLoading(true);
+    try {
+      await api("/api/auth", { method: "POST", body: JSON.stringify({ action: "dev_skip" }) });
+      window.dispatchEvent(new CustomEvent("resumeefy:signed-in"));
+      router.push(next);
+      router.refresh();
+    } catch {
+      setError("Dev bypass is not enabled on this build.");
+    } finally {
+      setDevLoading(false);
     }
   }
 
@@ -92,6 +108,11 @@ function SignupInner() {
             {loading ? "Creating account…" : "Create account →"}
           </button>
         </form>
+        {DEMO_MODE_PUBLIC && (
+          <button type="button" onClick={devSkip} disabled={devLoading} className="dev-bypass-btn">
+            ⚡ {devLoading ? "Skipping…" : "Skip account creation (dev build only)"}
+          </button>
+        )}
         <p className="text-center text-sm text-[var(--ink-soft)] mt-6">
           Already have an account?{" "}
           <Link href="/login" className="text-[var(--blue)] font-bold">
