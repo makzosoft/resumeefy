@@ -3,6 +3,7 @@ import { Suspense, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { api, safeNext } from "@/lib/client";
+import { DEMO_MODE_PUBLIC } from "@/lib/demo";
 
 function LoginInner() {
   const router = useRouter();
@@ -14,6 +15,7 @@ function LoginInner() {
   const [needsConfirmation, setNeedsConfirmation] = useState(false);
   const [resendState, setResendState] = useState<"idle" | "sending" | "sent">("idle");
   const [loading, setLoading] = useState(false);
+  const [devLoading, setDevLoading] = useState(false);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -23,6 +25,7 @@ function LoginInner() {
     setLoading(true);
     try {
       await api("/api/auth", { method: "POST", body: JSON.stringify({ action: "login", email, password }) });
+      window.dispatchEvent(new CustomEvent("resumeefy:signed-in"));
       router.push(next);
       router.refresh();
     } catch (err) {
@@ -31,6 +34,20 @@ function LoginInner() {
       setError(err instanceof Error ? err.message : "Something went wrong");
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function devSkip() {
+    setDevLoading(true);
+    try {
+      await api("/api/auth", { method: "POST", body: JSON.stringify({ action: "dev_skip" }) });
+      window.dispatchEvent(new CustomEvent("resumeefy:signed-in"));
+      router.push(next);
+      router.refresh();
+    } catch {
+      setError("Dev bypass is not enabled on this build.");
+    } finally {
+      setDevLoading(false);
     }
   }
 
@@ -73,6 +90,11 @@ function LoginInner() {
             {loading ? "Logging in…" : "Log in →"}
           </button>
         </form>
+        {DEMO_MODE_PUBLIC && (
+          <button type="button" onClick={devSkip} disabled={devLoading} className="dev-bypass-btn">
+            ⚡ {devLoading ? "Skipping…" : "Skip sign-in (dev build only)"}
+          </button>
+        )}
         <p className="text-center text-sm text-[var(--ink-soft)] mt-6">
           New here?{" "}
           <Link href="/signup" className="text-[var(--blue)] font-bold">
