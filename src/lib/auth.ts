@@ -91,9 +91,14 @@ export async function signUp(email: string, password: string, name: string) {
     return { user: { id: DEMO_USER_ID, email: email || DEMO_EMAIL }, hasSession: true };
   }
 
+  // Explicit redirect target for the confirmation email — without this,
+  // Supabase falls back to whatever Site URL is set in the dashboard, which
+  // is easy to leave stale or unset and is the most common cause of
+  // confirmation links landing somewhere unexpected.
+  const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || process.env.APP_URL || "https://resumeefy.com";
   const response = await authRequest("signup", {
     method: "POST",
-    body: JSON.stringify({ email, password, data: { name } }),
+    body: JSON.stringify({ email, password, data: { name }, options: { emailRedirectTo: `${baseUrl}/auth/callback` } }),
   });
   const body = (await response.json().catch(() => ({}))) as SupabaseAuthResponse;
 
@@ -141,9 +146,10 @@ async function setAuthCookies(accessToken: string, refreshToken: string) {
 
 export async function resendConfirmation(email: string): Promise<void> {
   if (DEMO_MODE) return;
+  const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || process.env.APP_URL || "https://resumeefy.com";
   const response = await authRequest("resend", {
     method: "POST",
-    body: JSON.stringify({ type: "signup", email }),
+    body: JSON.stringify({ type: "signup", email, options: { emailRedirectTo: `${baseUrl}/auth/callback` } }),
   });
   if (!response.ok) {
     const body = (await response.json().catch(() => ({}))) as SupabaseAuthResponse;
