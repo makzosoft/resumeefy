@@ -13,8 +13,30 @@ import {
   roleFamily,
   targetedSjt,
   ROLE_SCENARIOS,
-  SCENARIOS,
 } from "@/lib/questions";
+import {
+  buildDesktopTasks,
+  type BrowserMailContent,
+  type DesktopTask,
+  type DesignContent,
+  type DocumentsContent,
+  type SpreadsheetContent,
+  type SlidesContent,
+  type SupportContent,
+  type CodeContent,
+} from "@/lib/desktop-sim";
+import {
+  BrowserIcon,
+  DesignIcon,
+  DocumentIcon,
+  FolderIcon,
+  MailIcon,
+  SettingsIcon,
+  SpreadsheetIcon,
+  SlidesIcon,
+  SupportIcon,
+  CodeIcon,
+} from "@/components/AppIcons";
 
 type Step =
   | "gate"
@@ -176,6 +198,7 @@ export default function AssessmentPage() {
             <VoiceCoach text="Welcome to your Resumeefy assessment. Take your time, read each instruction carefully, and answer as you would in a real hiring process." />
             <h1 className="font-display text-2xl font-semibold">Before we start</h1>
             <p className="text-sm text-[var(--ink-soft)] mt-2">Optional, but it tailors the assessment to you.</p>
+            <p className="text-xs text-[var(--ink-soft)] mt-1">6 short modules · about 15 minutes total · your progress is saved as you go</p>
             <div className="mt-6 space-y-3 text-left">
               <input
                 aria-label="Target role"
@@ -631,176 +654,306 @@ function RoleSimulationStep({
 }
 
 /* =========================
+/* =========================
    Desktop Simulation
    ========================= */
+
+type AppId = "documents" | "spreadsheet" | "browser" | "mail" | "design" | "folder" | "settings" | "slides" | "support" | "code";
+
+const APP_META: Record<AppId, { label: string; Icon: (p: { size?: number }) => JSX.Element }> = {
+  documents: { label: "Documents", Icon: DocumentIcon },
+  spreadsheet: { label: "Spreadsheet", Icon: SpreadsheetIcon },
+  browser: { label: "Browser", Icon: BrowserIcon },
+  mail: { label: "Mail", Icon: MailIcon },
+  design: { label: "Design Studio", Icon: DesignIcon },
+  folder: { label: "Files", Icon: FolderIcon },
+  settings: { label: "Settings", Icon: SettingsIcon },
+  slides: { label: "Slides", Icon: SlidesIcon },
+  support: { label: "Helpdesk", Icon: SupportIcon },
+  code: { label: "Code Editor", Icon: CodeIcon },
+};
+
+function appsForTask(task: DesktopTask): AppId[] {
+  if (task.kind === "basics") return ["documents", "spreadsheet", "folder", "settings"];
+  if (task.kind === "browserMail") return ["browser", "mail", "folder", "settings"];
+  if (task.kind === "spreadsheet") return ["spreadsheet", "browser", "folder"];
+  if (task.kind === "documents") return ["documents", "browser", "folder"];
+  if (task.kind === "slides") return ["slides", "folder", "settings"];
+  if (task.kind === "support") return ["support", "folder", "settings"];
+  if (task.kind === "code") return ["code", "folder", "settings"];
+  return ["design", "folder", "settings"];
+}
+
+function AppWindow({
+  title,
+  Icon,
+  onMinimize,
+  onClose,
+  children,
+}: {
+  title: string;
+  Icon: (p: { size?: number }) => JSX.Element;
+  onMinimize: () => void;
+  onClose: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="dsim-window dsim-window-enter">
+      <div className="dwin-bar">
+        <div className="dwin-bar-title">
+          <Icon size={16} />
+          <b>{title}</b>
+        </div>
+        <div className="dwin-controls">
+          <button className="dwin-btn dwin-btn-min" aria-label={`Minimize ${title}`} onClick={onMinimize}>
+            <span />
+          </button>
+          <button className="dwin-btn dwin-btn-close" aria-label={`Close ${title}`} onClick={onClose}>
+            <span />
+            <span />
+          </button>
+        </div>
+      </div>
+      {children}
+    </div>
+  );
+}
 
 function DesktopStep({
   elapsed,
   targetRole,
-  jobDescription,
   onDone,
   onBack,
 }: {
   elapsed: number;
   targetRole: string;
-  jobDescription: string;
+  jobDescription?: string;
   onDone: (score: number) => void;
   onBack: () => void;
 }) {
-  const fallbackScenario = useMemo(
-    () => SCENARIOS[Math.floor(Math.random() * SCENARIOS.length)],
-    []
-  );
-  const [scenarios, setScenarios] = useState<any[]>([]);
+  const tasks = useMemo(() => buildDesktopTasks(targetRole), [targetRole]);
   const [taskIndex, setTaskIndex] = useState(0);
   const [taskScores, setTaskScores] = useState<number[]>([]);
-  const [scenario, setScenario] = useState<any>(null);
-  const [stage, setStage] = useState<"search" | "results" | "page">("search");
-  const [app, setApp] = useState<"browser" | "mail" | "sheets" | "notes" | "calc" | "bin" | null>(null);
-  const [mail, setMail] = useState<"inbox" | "read" | "compose" | "sent">("inbox");
-  const [copied, setCopied] = useState(false);
-  const [sent, setSent] = useState(false);
-  const [status, setStatus] = useState("Pending");
-  const [time, setTime] = useState("");
-  const [saved, setSaved] = useState(false);
+  const task = tasks[taskIndex];
+
+  const [openApps, setOpenApps] = useState<Partial<Record<AppId, boolean>>>({});
+  const [minimized, setMinimized] = useState<Partial<Record<AppId, boolean>>>({});
+  const [active, setActive] = useState<AppId | null>(null);
+  const [done, setDone] = useState<Record<string, boolean>>({});
   const [mistakes, setMistakes] = useState(0);
-  const [decorative, setDecorative] = useState(0);
+  const [decorativeClicks, setDecorativeClicks] = useState(0);
+  const [advancing, setAdvancing] = useState(false);
+
+  // basics
+  const [openedPrimary, setOpenedPrimary] = useState(false);
+  const [minimizedPrimary, setMinimizedPrimary] = useState(false);
+  const [restoredPrimary, setRestoredPrimary] = useState(false);
+  const [openedSecondary, setOpenedSecondary] = useState(false);
+  const [closedSecondary, setClosedSecondary] = useState(false);
+
+  // browser & mail
+  const [browserStage, setBrowserStage] = useState<"search" | "results" | "page">("search");
+  const [mailStage, setMailStage] = useState<"inbox" | "read" | "compose" | "sent">("inbox");
+  const [hasCopied, setHasCopied] = useState(false);
+  const [hasPasted, setHasPasted] = useState(false);
+
+  // spreadsheet
+  const [formulaEntered, setFormulaEntered] = useState(false);
+  const [sorted, setSorted] = useState(false);
+  const [sheetSaved, setSheetSaved] = useState(false);
+
+  // documents
+  const [docBold, setDocBold] = useState(false);
+  const [docTypoFixed, setDocTypoFixed] = useState(false);
+  const [docBulleted, setDocBulleted] = useState(false);
+  const [docSaved, setDocSaved] = useState(false);
+
+  // design
+  const [designTemplate, setDesignTemplate] = useState<string | null>(null);
+  const [designColor, setDesignColor] = useState<string | null>(null);
+  const [designHeadlineDone, setDesignHeadlineDone] = useState(false);
+  const [designExported, setDesignExported] = useState(false);
+
+  // slides
+  const [slidesLayout, setSlidesLayout] = useState<string | null>(null);
+  const [slidesTitleDone, setSlidesTitleDone] = useState(false);
+  const [slidesBulletDone, setSlidesBulletDone] = useState(false);
+  const [slidesPresented, setSlidesPresented] = useState(false);
+
+  // support
+  const [supportRead, setSupportRead] = useState(false);
+  const [supportCategory, setSupportCategory] = useState<string | null>(null);
+  const [supportReplied, setSupportReplied] = useState(false);
+  const [supportResolved, setSupportResolved] = useState(false);
+
+  // code
+  const [codeRead, setCodeRead] = useState(false);
+  const [codeFixed, setCodeFixed] = useState(false);
+  const [codeRan, setCodeRan] = useState(false);
+  const [codeSaved, setCodeSaved] = useState(false);
 
   useEffect(() => {
-    let active = true;
-    api<any>("/api/ai?action=desktop", {
-      method: "POST",
-      body: JSON.stringify({
-        action: "desktop",
-        targetRole,
-        jobDescription: jobDescription || undefined,
-      }),
-    })
-      .then((r) => {
-        if (active) {
-          const next = r.tasks || [];
-          setScenarios(next);
-          setTaskScores([]);
-          setTaskIndex(0);
-          setScenario(next[0] || fallbackScenario);
-        }
-      })
-      .catch(() => {
-        if (active) {
-          setScenarios([fallbackScenario, fallbackScenario, fallbackScenario]);
-          setScenario(fallbackScenario);
-        }
-      });
-    return () => {
-      active = false;
-    };
-  }, [targetRole, jobDescription, fallbackScenario]);
-
-  useEffect(() => {
-    setScenario(scenarios[taskIndex] || null);
-    setStage("search");
-    setApp(null);
-    setMail("inbox");
-    setCopied(false);
-    setSent(false);
-    setSaved(false);
+    setOpenApps({});
+    setMinimized({});
+    setActive(null);
+    setDone({});
     setMistakes(0);
-    setDecorative(0);
-    setStatus("Pending");
-    setTime("");
-  }, [taskIndex, scenarios]);
+    setDecorativeClicks(0);
+    setAdvancing(false);
+    setOpenedPrimary(false);
+    setMinimizedPrimary(false);
+    setRestoredPrimary(false);
+    setOpenedSecondary(false);
+    setClosedSecondary(false);
+    setBrowserStage("search");
+    setMailStage("inbox");
+    setHasCopied(false);
+    setHasPasted(false);
+    setFormulaEntered(false);
+    setSorted(false);
+    setSheetSaved(false);
+    setDocBold(false);
+    setDocTypoFixed(false);
+    setDocBulleted(false);
+    setDocSaved(false);
+    setDesignTemplate(null);
+    setDesignColor(null);
+    setDesignHeadlineDone(false);
+    setDesignExported(false);
+    setSlidesLayout(null);
+    setSlidesTitleDone(false);
+    setSlidesBulletDone(false);
+    setSlidesPresented(false);
+    setSupportRead(false);
+    setSupportCategory(null);
+    setSupportReplied(false);
+    setSupportResolved(false);
+    setCodeRead(false);
+    setCodeFixed(false);
+    setCodeRan(false);
+    setCodeSaved(false);
+  }, [taskIndex]);
 
-  if (!scenario) {
-    return (
-      <div className="card p-8 max-w-3xl mx-auto text-center">
-        <VoiceCoach text="I am building a desktop task around your target role and the tools it is likely to use." />
-        <h2 className="font-display text-xl font-semibold">Generating your workplace simulation…</h2>
-        <p className="text-sm text-[var(--ink-soft)] mt-2">Your software, task and workflow are being tailored.</p>
-      </div>
-    );
+  function markDone(id: string) {
+    setDone((d) => (d[id] ? d : { ...d, [id]: true }));
   }
 
-  const done = [stage === "page", copied, sent, saved];
-
-  const submit = () => {
-    const completed = done.filter(Boolean).length;
-    let score = 100 - decorative * 3 - mistakes * 4;
-    if (completed < 3) score = Math.min(score, 55);
-    if (elapsed < 150) score += 5;
-    if (elapsed > 255) score -= 5;
-    const taskScore = Math.max(60, Math.min(100, score));
-    const nextScores = [...taskScores, taskScore];
-    setTaskScores(nextScores);
-    if (taskIndex < scenarios.length - 1) {
-      setTaskIndex((v) => v + 1);
-    } else {
-      onDone(Math.round(nextScores.reduce((a, b) => a + b, 0) / nextScores.length));
+  function openApp(id: AppId) {
+    if (id === "folder" || id === "settings") {
+      setDecorativeClicks((v) => v + 1);
+      return;
     }
-  };
+    setOpenApps((s) => ({ ...s, [id]: true }));
+    setMinimized((s) => ({ ...s, [id]: false }));
+    setActive(id);
+    if (task.kind === "basics") {
+      if (id === task.content.primaryApp) {
+        setOpenedPrimary(true);
+        markDone("open-a");
+      }
+      if (id === task.content.secondaryApp) {
+        setOpenedSecondary(true);
+        markDone("open-b");
+      }
+    }
+    if (task.kind === "spreadsheet" && id === "spreadsheet") markDone("open");
+    if (task.kind === "documents" && id === "documents") markDone("open");
+    if (task.kind === "design" && id === "design") markDone("open");
+    if (task.kind === "slides" && id === "slides") markDone("open");
+    if (task.kind === "support" && id === "support") markDone("open");
+    if (task.kind === "code" && id === "code") markDone("open");
+  }
+
+  function minimizeApp(id: AppId) {
+    setMinimized((s) => ({ ...s, [id]: true }));
+    setActive((a) => (a === id ? null : a));
+    if (task.kind === "basics" && id === task.content.primaryApp && openedPrimary) {
+      setMinimizedPrimary(true);
+      markDone("minimize-a");
+    }
+  }
+
+  function restoreApp(id: AppId) {
+    setMinimized((s) => ({ ...s, [id]: false }));
+    setActive(id);
+    if (task.kind === "basics" && id === task.content.primaryApp && minimizedPrimary) {
+      setRestoredPrimary(true);
+      markDone("restore-a");
+    }
+  }
+
+  function closeApp(id: AppId) {
+    setOpenApps((s) => ({ ...s, [id]: false }));
+    setMinimized((s) => ({ ...s, [id]: false }));
+    setActive((a) => (a === id ? null : a));
+    if (task.kind === "basics" && id === task.content.secondaryApp && openedSecondary) {
+      setClosedSecondary(true);
+      markDone("close-b");
+    }
+  }
+
+  const allDone = task.checklist.length > 0 && task.checklist.every((item) => done[item.id]);
+
+  useEffect(() => {
+    if (!allDone) return;
+    setAdvancing(true);
+    const t = window.setTimeout(() => {
+      let score = 100 - decorativeClicks * 2 - mistakes * 4;
+      if (elapsed < 150) score += 5;
+      score = Math.max(60, Math.min(100, score));
+      const next = [...taskScores, score];
+      setTaskScores(next);
+      if (taskIndex < tasks.length - 1) setTaskIndex((v) => v + 1);
+      else onDone(Math.round(next.reduce((a, b) => a + b, 0) / next.length));
+    }, 1200);
+    return () => window.clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [allDone]);
+
+  const visibleApps = appsForTask(task);
+  const activeAppOpen = active && openApps[active] && !minimized[active];
 
   return (
     <div className="desktop-sim-grid max-w-5xl mx-auto">
       <div className="card p-6 desktop-checklist">
-        <VoiceCoach text={scenario.task} />
+        <VoiceCoach
+          text={
+            task.kind === "basics"
+              ? "This first task checks basic computer operation: opening, minimizing and closing windows."
+              : `Task ${taskIndex + 1}. ${task.title}.`
+          }
+        />
         <div className="text-xs font-bold text-[var(--blue)]">
-          DESKTOP SIMULATION · TASK {taskIndex + 1} OF {Math.max(3, scenarios.length)}
+          DESKTOP SIMULATION · TASK {taskIndex + 1} OF {tasks.length}
         </div>
-        <h2 className="font-display text-xl font-semibold mt-2">{scenario.name}</h2>
-        <p className="text-sm text-[var(--ink-soft)] mt-2">{scenario.task}</p>
+        <h2 className="font-display text-xl font-semibold mt-2">{task.title}</h2>
         <div className="mt-3 rounded-2xl bg-[var(--blue-dim)] p-4 text-sm font-semibold">
-          Start by reading the brief. Then <strong>open the app yourself</strong>. Nothing is opened
-          automatically.
+          Open apps yourself by clicking their icon — nothing opens automatically. This moves on the moment every step below is complete.
         </div>
         <div className="mt-5 space-y-3">
-          {scenario.checklist.map((item: string, i: number) => {
-            const states = [stage !== "search", copied, sent, saved];
-            return (
-              <div key={i} className={`cl-item ${states[i] ? "done" : ""}`}>
-                <span>{states[i] ? "✓" : i + 1}</span>
-                {item}
-              </div>
-            );
-          })}
+          {task.checklist.map((item) => (
+            <div key={item.id} className={`cl-item ${done[item.id] ? "done" : ""}`}>
+              <span>{done[item.id] ? "✓" : ""}</span>
+              {item.label}
+            </div>
+          ))}
         </div>
-        <button className="btn btn-primary w-full justify-center mt-5" disabled={!saved} onClick={submit}>
-          {taskIndex < scenarios.length - 1 ? "Submit task and continue →" : "Submit final task →"}
-        </button>
+        {advancing && (
+          <div className="dsim-advancing" role="status">
+            All steps complete — {taskIndex < tasks.length - 1 ? "moving to the next task…" : "finishing up…"}
+          </div>
+        )}
       </div>
 
       <div className="dsim-screen">
         <div className="dsim-topbar">Resumeefy Desktop Simulation</div>
         <div className="dsim-desktop">
-          {(["browser", "mail", "sheets", "notes", "calc", "bin"] as const).map((name, idx) => {
-            const labels = scenario.software?.length
-              ? scenario.software
-              : ["Browser", "Mail", "Spreadsheet", "Notes", "Calculator", "Files"];
-            const label = labels[Math.min(idx, labels.length - 1)];
-            const locked = (name === "mail" && !copied) || (name === "sheets" && !sent);
+          {visibleApps.map((id) => {
+            const { label, Icon } = APP_META[id];
             return (
-              <button
-                key={name}
-                disabled={locked}
-                title={label}
-                className={`dsim-app ${locked ? "locked" : ""}`}
-                onClick={() => {
-                  if (["notes", "calc", "bin"].includes(name)) setDecorative((v) => v + 1);
-                  else setApp(name);
-                }}
-              >
-                <span className="app-icon">
-                  {name === "browser" ? (
-                    <img src="/brand/apps/chrome.svg" alt="" />
-                  ) : name === "mail" ? (
-                    <img src="/brand/apps/gmail.svg" alt="" />
-                  ) : name === "sheets" ? (
-                    <img src="/brand/apps/sheets.svg" alt="" />
-                  ) : name === "notes" ? (
-                    "✎"
-                  ) : name === "calc" ? (
-                    "＋"
-                  ) : (
-                    "♲"
-                  )}
+              <button key={id} title={label} className="dsim-app" onClick={() => openApp(id)}>
+                <span className="app-icon-wrap">
+                  <Icon size={30} />
                 </span>
                 {label}
               </button>
@@ -808,55 +961,224 @@ function DesktopStep({
           })}
         </div>
 
-        {app && (
-          <div className="dsim-window">
-            <div className="dwin-bar">
-              <b>{app[0].toUpperCase() + app.slice(1)}</b>
-              <button onClick={() => setApp(null)} aria-label="Close window">
-                ✕
-              </button>
-            </div>
-            {app === "browser" && (
-              <BrowserPanel
-                stage={stage}
-                setStage={setStage}
-                scenario={scenario}
-                setCopied={setCopied}
-                setApp={setApp}
+        {activeAppOpen && active && (
+          <AppWindow
+            title={APP_META[active].label}
+            Icon={APP_META[active].Icon}
+            onMinimize={() => minimizeApp(active)}
+            onClose={() => closeApp(active)}
+          >
+            {task.kind === "basics" && <BasicsWindowContent appId={active} />}
+            {task.kind === "browserMail" && active === "browser" && (
+              <BrowserWindowContent
+                content={task.content}
+                stage={browserStage}
+                onSearch={() => {
+                  setBrowserStage("results");
+                  markDone("search");
+                }}
+                onOpenResult={() => {
+                  setBrowserStage("page");
+                  markDone("open-result");
+                }}
+                onCopy={() => {
+                  setHasCopied(true);
+                  markDone("copy");
+                }}
               />
             )}
-            {app === "mail" && (
-              <MailPanel
-                stage={mail}
-                setStage={setMail}
-                scenario={scenario}
-                copied={copied}
-                setSent={setSent}
-                setApp={setApp}
-                mistakes={mistakes}
-                setMistakes={setMistakes}
+            {task.kind === "browserMail" && active === "mail" && (
+              <MailWindowContent
+                content={task.content}
+                stage={mailStage}
+                hasCopied={hasCopied}
+                hasPasted={hasPasted}
+                onOpen={() => {
+                  setMailStage("read");
+                  markDone("open-mail");
+                }}
+                onReply={() => setMailStage("compose")}
+                onPasteAttempt={() => {
+                  if (!hasCopied) {
+                    setMistakes((v) => v + 1);
+                    return;
+                  }
+                  setHasPasted(true);
+                  markDone("paste");
+                }}
+                onSend={() => {
+                  setMailStage("sent");
+                  markDone("send");
+                }}
               />
             )}
-            {app === "sheets" && (
-              <SheetsPanel
-                scenario={scenario}
-                status={status}
-                setStatus={setStatus}
-                time={time}
-                setTime={setTime}
-                saved={saved}
-                setSaved={setSaved}
-                elapsed={elapsed}
-                mistakes={mistakes}
-                setMistakes={setMistakes}
-                setApp={setApp}
+            {task.kind === "spreadsheet" && (
+              <SpreadsheetWindowContent
+                content={task.content}
+                formulaEntered={formulaEntered}
+                onFormula={() => {
+                  setFormulaEntered(true);
+                  markDone("formula");
+                }}
+                sorted={sorted}
+                onSort={() => {
+                  setSorted(true);
+                  markDone("sort");
+                }}
+                saved={sheetSaved}
+                onSave={() => {
+                  setSheetSaved(true);
+                  markDone("save");
+                }}
               />
             )}
-          </div>
+            {task.kind === "documents" && (
+              <DocumentsWindowContent
+                content={task.content}
+                bold={docBold}
+                onBold={() => {
+                  setDocBold(true);
+                  markDone("bold");
+                }}
+                typoFixed={docTypoFixed}
+                onTypoFix={() => {
+                  setDocTypoFixed(true);
+                  markDone("typo");
+                }}
+                bulleted={docBulleted}
+                onBulletify={() => {
+                  setDocBulleted(true);
+                  markDone("list");
+                }}
+                saved={docSaved}
+                onSave={() => {
+                  setDocSaved(true);
+                  markDone("save");
+                }}
+              />
+            )}
+            {task.kind === "design" && (
+              <DesignWindowContent
+                content={task.content}
+                template={designTemplate}
+                onTemplate={(name: string) => {
+                  setDesignTemplate(name);
+                  markDone("template");
+                }}
+                color={designColor}
+                onColor={(name: string) => {
+                  setDesignColor(name);
+                  if (name === task.content.correctColorName) markDone("color");
+                  else setMistakes((v) => v + 1);
+                }}
+                headlineDone={designHeadlineDone}
+                onHeadline={() => {
+                  setDesignHeadlineDone(true);
+                  markDone("headline");
+                }}
+                exported={designExported}
+                onExport={() => {
+                  setDesignExported(true);
+                  markDone("export");
+                }}
+              />
+            )}
+            {task.kind === "slides" && (
+              <SlidesWindowContent
+                content={task.content}
+                layout={slidesLayout}
+                onLayout={(name: string) => {
+                  setSlidesLayout(name);
+                  if (name === task.content.correctLayoutName) markDone("layout");
+                  else setMistakes((v) => v + 1);
+                }}
+                titleDone={slidesTitleDone}
+                onTitle={() => {
+                  setSlidesTitleDone(true);
+                  markDone("title");
+                }}
+                bulletDone={slidesBulletDone}
+                onBullet={() => {
+                  setSlidesBulletDone(true);
+                  markDone("bullet");
+                }}
+                presented={slidesPresented}
+                onPresent={() => {
+                  setSlidesPresented(true);
+                  markDone("present");
+                }}
+              />
+            )}
+            {task.kind === "support" && (
+              <SupportWindowContent
+                content={task.content}
+                read={supportRead}
+                onRead={() => {
+                  setSupportRead(true);
+                  markDone("read");
+                }}
+                category={supportCategory}
+                onCategory={(name: string) => {
+                  setSupportCategory(name);
+                  if (name === task.content.correctCategory) markDone("category");
+                  else setMistakes((v) => v + 1);
+                }}
+                replied={supportReplied}
+                onReply={(isCorrect: boolean) => {
+                  setSupportReplied(true);
+                  if (isCorrect) markDone("reply");
+                  else setMistakes((v) => v + 1);
+                }}
+                resolved={supportResolved}
+                onResolve={() => {
+                  setSupportResolved(true);
+                  markDone("resolve");
+                }}
+              />
+            )}
+            {task.kind === "code" && (
+              <CodeWindowContent
+                content={task.content}
+                read={codeRead}
+                onRead={() => {
+                  setCodeRead(true);
+                  markDone("read");
+                }}
+                fixed={codeFixed}
+                onFix={() => {
+                  setCodeFixed(true);
+                  markDone("fix");
+                }}
+                ran={codeRan}
+                onRun={() => {
+                  setCodeRan(true);
+                  markDone("run");
+                }}
+                saved={codeSaved}
+                onSave={() => {
+                  setCodeSaved(true);
+                  markDone("save");
+                }}
+              />
+            )}
+          </AppWindow>
         )}
 
         <div className="dsim-taskbar">
-          <span>Start</span>
+          <span className="dsim-taskbar-start">Start</span>
+          <div className="dsim-taskbar-chips">
+            {visibleApps
+              .filter((id) => openApps[id] && minimized[id])
+              .map((id) => {
+                const { label, Icon } = APP_META[id];
+                return (
+                  <button key={id} className="dsim-chip" onClick={() => restoreApp(id)}>
+                    <Icon size={14} />
+                    {label}
+                  </button>
+                );
+              })}
+          </div>
           <span>{formatTime(elapsed)}</span>
         </div>
       </div>
@@ -870,180 +1192,558 @@ function DesktopStep({
   );
 }
 
-function BrowserPanel({ stage, setStage, scenario, setCopied, setApp }: any) {
-  return (
-    <div className="dwin-body">
-      {stage === "search" && (
-        <>
-          <div className="browser-bar">
-            <input defaultValue={scenario.searchQuery} aria-label="Search" />
-            <button className="btn-sm" onClick={() => setStage("results")}>
-              Search
-            </button>
-          </div>
-        </>
-      )}
-      {stage === "results" && (
-        <>
-          <div className="search-result" onClick={() => setStage("page")}>
-            <b>{scenario.resultUrl}</b>
-            <strong>{scenario.resultTitle}</strong>
-          </div>
-          {scenario.otherResults.map((r: any) => (
-            <div className="search-result" key={r.url}>
-              <b>{r.url}</b>
-              <strong>{r.title}</strong>
-            </div>
-          ))}
-        </>
-      )}
-      {stage === "page" && (
-        <>
-          <h3>{scenario.pageTitle}</h3>
-          <p>{scenario.pageBody}</p>
-          <div className="contact-box">
-            <code>{scenario.copyValue}</code>
-            <button
-              className="btn-sm"
-              onClick={() => {
-                setCopied(true);
-                setApp("mail");
-              }}
-            >
-              Copy {scenario.copyLabel.replace("Copy ", "")}
-            </button>
-          </div>
-        </>
-      )}
-    </div>
-  );
-}
-
-function MailPanel({
-  stage,
-  setStage,
-  scenario,
-  copied,
-  setSent,
-  setApp,
-  mistakes,
-  setMistakes,
-}: any) {
-  const [pasted, setPasted] = useState(false);
-  void mistakes;
-  return (
-    <div className="dwin-body">
-      {stage === "inbox" && (
-        <button className="mail-list-item" onClick={() => setStage("read")}>
-          <b>
-            {scenario.from} &lt;{scenario.fromEmail}&gt;
-          </b>
-          <span>
-            {scenario.subject} {scenario.preview}
-          </span>
-        </button>
-      )}
-      {stage === "read" && (
-        <>
-          <p>
-            <b>From:</b> {scenario.from} &lt;{scenario.fromEmail}&gt;
-            <br />
-            <b>Subject:</b> {scenario.subject}
-          </p>
-          <p>{scenario.fullMessage}</p>
-          <button className="btn-sm" onClick={() => setStage("compose")}>
-            Reply
-          </button>
-        </>
-      )}
-      {stage === "compose" && (
-        <>
-          <label>FROM</label>
-          <div className="field-with-btn">
-            <input value={pasted ? scenario.copyValue : ""} readOnly aria-label="Recipient/reference" />
-            <button
-              className="btn-sm"
-              onClick={() => (copied ? setPasted(true) : setMistakes((v: number) => v + 1))}
-            >
-              Paste
-            </button>
-          </div>
-          <label className="mt-4 block">MESSAGE</label>
-          <textarea defaultValue={scenario.replyTemplate} aria-label="Reply message" />
-          <button
-            className="btn-sm mt-3"
-            disabled={!pasted}
-            onClick={() => {
-              setSent(true);
-              setStage("sent");
-              setApp("sheets");
-            }}
-          >
-            Send
-          </button>
-        </>
-      )}
-      {stage === "sent" && <div className="sent-state">✓ Sent to {scenario.from}</div>}
-    </div>
-  );
-}
-
-function SheetsPanel({
-  scenario,
-  status,
-  setStatus,
-  time,
-  setTime,
-  saved,
-  setSaved,
-  elapsed,
-  mistakes,
-  setMistakes,
-  setApp,
-}: any) {
-  void mistakes;
+function BasicsWindowContent({ appId }: { appId: AppId }) {
+  if (appId === "documents") {
+    return (
+      <div className="dwin-body doc-body">
+        <h4>Welcome note (untitled)</h4>
+        <p>This is a blank document window. For this task, use the window's own minimize and close controls — nothing needs typing here.</p>
+      </div>
+    );
+  }
   return (
     <div className="dwin-body">
       <table className="sheet">
         <tbody>
           <tr>
-            <th>{scenario.sheetCols[0]}</th>
-            <th>{scenario.sheetCols[1]}</th>
-            <th>{scenario.sheetCols[2]}</th>
+            <th>A</th>
+            <th>B</th>
+            <th>C</th>
           </tr>
           <tr>
-            <td>{scenario.sheetCandidate}</td>
+            <td />
+            <td />
+            <td />
+          </tr>
+        </tbody>
+      </table>
+      <p className="text-xs text-[var(--ink-soft)] mt-3">An empty spreadsheet. Use the window's own controls to complete this task.</p>
+    </div>
+  );
+}
+
+function BrowserWindowContent({
+  content,
+  stage,
+  onSearch,
+  onOpenResult,
+  onCopy,
+}: {
+  content: BrowserMailContent;
+  stage: "search" | "results" | "page";
+  onSearch: () => void;
+  onOpenResult: () => void;
+  onCopy: () => void;
+}) {
+  const [query, setQuery] = useState("");
+  if (stage === "search") {
+    return (
+      <div className="dwin-body">
+        <div className="browser-bar">
+          <input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && onSearch()}
+            placeholder="Search the web"
+            aria-label="Search"
+          />
+          <button className="btn-sm" onClick={onSearch}>
+            Search
+          </button>
+        </div>
+        <p className="text-xs text-[var(--ink-soft)] mt-3">Type your search and press Enter, or click Search.</p>
+      </div>
+    );
+  }
+  if (stage === "results") {
+    return (
+      <div className="dwin-body">
+        <div className="browser-bar">
+          <input defaultValue={content.searchQuery} readOnly aria-label="Search" />
+        </div>
+        <button className="search-result" onClick={onOpenResult}>
+          <b>{content.resultUrl}</b>
+          <strong>{content.resultTitle}</strong>
+        </button>
+        {content.otherResults.map((r) => (
+          <div className="search-result dim" key={r.url}>
+            <b>{r.url}</b>
+            <strong>{r.title}</strong>
+          </div>
+        ))}
+      </div>
+    );
+  }
+  return (
+    <div className="dwin-body">
+      <h3>{content.pageTitle}</h3>
+      <p>{content.pageBody}</p>
+      <p className="copy-hint mt-3">Select the highlighted text, then copy it — Ctrl/Cmd+C or right-click → Copy. There's no Copy button.</p>
+      <span className="copyable-chip" tabIndex={0} onCopy={onCopy}>
+        {content.copyValue}
+      </span>
+    </div>
+  );
+}
+
+function MailWindowContent({
+  content,
+  stage,
+  hasCopied,
+  hasPasted,
+  onOpen,
+  onReply,
+  onPasteAttempt,
+  onSend,
+}: {
+  content: BrowserMailContent;
+  stage: "inbox" | "read" | "compose" | "sent";
+  hasCopied: boolean;
+  hasPasted: boolean;
+  onOpen: () => void;
+  onReply: () => void;
+  onPasteAttempt: () => void;
+  onSend: () => void;
+}) {
+  const [replyText, setReplyText] = useState("");
+  if (stage === "inbox") {
+    return (
+      <div className="dwin-body">
+        <button className="mail-row" onClick={onOpen}>
+          <b>{content.from}</b>
+          <span className="mail-subject">{content.subject}</span>
+          <p className="mail-preview">{content.preview}</p>
+        </button>
+      </div>
+    );
+  }
+  if (stage === "read") {
+    return (
+      <div className="dwin-body">
+        <p>
+          <b>From:</b> {content.from} &lt;{content.fromEmail}&gt;
+        </p>
+        <p>
+          <b>Subject:</b> {content.subject}
+        </p>
+        <p className="mt-3">{content.fullMessage}</p>
+        <button className="btn-sm mt-4" onClick={onReply}>
+          Reply
+        </button>
+      </div>
+    );
+  }
+  if (stage === "compose") {
+    return (
+      <div className="dwin-body">
+        <p className="text-xs text-[var(--ink-soft)]">To: {content.fromEmail}</p>
+        <p className="copy-hint mt-2">Click into the box, then paste — Ctrl/Cmd+V or right-click → Paste. There's no Paste button.</p>
+        <textarea
+          className="mt-2"
+          value={replyText}
+          onChange={(e) => setReplyText(e.target.value)}
+          onPaste={(e) => {
+            const text = e.clipboardData.getData("text");
+            if (text) onPasteAttempt();
+          }}
+          placeholder={`${content.replyOpener} …`}
+        />
+        <button className="btn-sm mt-3" disabled={!hasPasted || !hasCopied} onClick={onSend}>
+          Send
+        </button>
+      </div>
+    );
+  }
+  return (
+    <div className="dwin-body">
+      <p className="text-sm text-[var(--mint)] font-semibold">Reply sent.</p>
+    </div>
+  );
+}
+
+function SpreadsheetWindowContent({
+  content,
+  formulaEntered,
+  onFormula,
+  sorted,
+  onSort,
+  saved,
+  onSave,
+}: {
+  content: SpreadsheetContent;
+  formulaEntered: boolean;
+  onFormula: () => void;
+  sorted: boolean;
+  onSort: () => void;
+  saved: boolean;
+  onSave: () => void;
+}) {
+  const [formulaInput, setFormulaInput] = useState("");
+  const [rows, setRows] = useState(content.rows);
+  const total = content.rows.reduce((a, r) => a + r.value, 0);
+  return (
+    <div className="dwin-body">
+      <h4>{content.title}</h4>
+      <table className="sheet mt-2">
+        <thead>
+          <tr>
+            <th>{content.rowLabel}</th>
+            <th
+              className="sheet-sortable"
+              onClick={() => {
+                setRows((r) => [...r].sort((a, b) => b.value - a.value));
+                onSort();
+              }}
+            >
+              {content.sortColumn} {sorted ? "✓" : "▾ click to sort"}
+            </th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((r) => (
+            <tr key={r.name}>
+              <td>{r.name}</td>
+              <td>{r.value.toLocaleString()}</td>
+            </tr>
+          ))}
+          <tr className="sheet-total-row">
             <td>
-              <select value={status} onChange={(e) => setStatus(e.target.value)}>
-                <option>Pending</option>
-                <option>{scenario.statusOptions[1]}</option>
-              </select>
+              <b>{content.sumLabel}</b>
             </td>
             <td>
-              <div className="field-with-btn">
-                <input value={time} readOnly placeholder="—" />
-                <button className="btn-sm" onClick={() => setTime(formatTime(elapsed))}>
-                  Paste Timer
-                </button>
-              </div>
+              <input
+                value={formulaInput}
+                onChange={(e) => setFormulaInput(e.target.value)}
+                onBlur={() => {
+                  if (/^=?\s*sum/i.test(formulaInput.trim())) onFormula();
+                }}
+                placeholder="=SUM(...)"
+                aria-label="Formula"
+              />
             </td>
           </tr>
         </tbody>
       </table>
-      <button
-        className="btn-sm mt-4"
-        onClick={() => {
-          if (status !== scenario.statusOptions[1] || !time) {
-            setMistakes((v: number) => v + 1);
-            return;
-          }
-          setSaved(true);
-          setApp(null);
-        }}
-      >
+      {formulaEntered && (
+        <p className="text-xs text-[var(--mint)] mt-2">Formula recognized — total is {total.toLocaleString()}.</p>
+      )}
+      <button className="btn-sm mt-4" disabled={!formulaEntered || !sorted} onClick={onSave}>
         Save
       </button>
-      {saved && <p className="text-sm text-[var(--mint)] mt-3">Row saved.</p>}
+      {saved && <p className="text-sm text-[var(--mint)] mt-2">Spreadsheet saved.</p>}
+    </div>
+  );
+}
+
+function DocumentsWindowContent({
+  content,
+  bold,
+  onBold,
+  typoFixed,
+  onTypoFix,
+  bulleted,
+  onBulletify,
+  saved,
+  onSave,
+}: {
+  content: DocumentsContent;
+  bold: boolean;
+  onBold: () => void;
+  typoFixed: boolean;
+  onTypoFix: () => void;
+  bulleted: boolean;
+  onBulletify: () => void;
+  saved: boolean;
+  onSave: () => void;
+}) {
+  const parts = content.bodyWithTypo.split(content.typoWord);
+  return (
+    <div className="dwin-body doc-body">
+      <h4 className={`doc-heading ${bold ? "is-bold" : ""}`} onClick={onBold} role="button" tabIndex={0}>
+        {content.heading}
+        {!bold && <span className="doc-hint"> (click to bold)</span>}
+      </h4>
+      <p>
+        {parts[0]}
+        <span className={typoFixed ? "doc-typo-fixed" : "doc-typo"} onClick={onTypoFix} role="button" tabIndex={0}>
+          {typoFixed ? content.correctedWord : content.typoWord}
+        </span>
+        {parts[1]}
+      </p>
+      <p className="mt-3">{content.listIntro}</p>
+      {!bulleted ? (
+        <div onClick={onBulletify} className="doc-plain-list" role="button" tabIndex={0}>
+          {content.listItems.map((item) => (
+            <p key={item}>{item}</p>
+          ))}
+          <span className="doc-hint">(click to turn into a bulleted list)</span>
+        </div>
+      ) : (
+        <ul>
+          {content.listItems.map((item) => (
+            <li key={item}>{item}</li>
+          ))}
+        </ul>
+      )}
+      <button className="btn-sm mt-4" disabled={!bold || !typoFixed || !bulleted} onClick={onSave}>
+        Save
+      </button>
+      {saved && <p className="text-sm text-[var(--mint)] mt-2">Document saved.</p>}
+    </div>
+  );
+}
+
+function DesignWindowContent({
+  content,
+  template,
+  onTemplate,
+  color,
+  onColor,
+  headlineDone,
+  onHeadline,
+  exported,
+  onExport,
+}: {
+  content: DesignContent;
+  template: string | null;
+  onTemplate: (name: string) => void;
+  color: string | null;
+  onColor: (name: string) => void;
+  headlineDone: boolean;
+  onHeadline: () => void;
+  exported: boolean;
+  onExport: () => void;
+}) {
+  const [headline, setHeadline] = useState("");
+  const activeColor = content.colorOptions.find((c) => c.name === color)?.hex;
+  return (
+    <div className="dwin-body design-body">
+      <p className="text-xs text-[var(--ink-soft)]">{content.brief}</p>
+      {!template ? (
+        <button className="design-template-card mt-3" onClick={() => onTemplate(content.templateName)}>
+          <span className="dt-preview" />
+          {content.templateName}
+        </button>
+      ) : (
+        <>
+          <div className="design-canvas mt-3" style={{ background: activeColor || "#cbd5e1" }}>
+            <span className="design-canvas-text">{headline || "Your headline here"}</span>
+          </div>
+          <div className="design-colors mt-3">
+            {content.colorOptions.map((c) => (
+              <button
+                key={c.name}
+                className={`design-swatch ${color === c.name ? "active" : ""}`}
+                style={{ background: c.hex }}
+                title={c.name}
+                onClick={() => onColor(c.name)}
+                aria-label={c.name}
+              />
+            ))}
+          </div>
+          <input
+            className="input mt-3"
+            placeholder={`Type: ${content.headline}`}
+            value={headline}
+            onChange={(e) => {
+              setHeadline(e.target.value);
+              if (e.target.value.trim() === content.headline) onHeadline();
+            }}
+          />
+          <button className="btn-sm mt-3" disabled={!color || !headlineDone} onClick={onExport}>
+            Export design
+          </button>
+          {exported && <p className="text-sm text-[var(--mint)] mt-2">Design exported.</p>}
+        </>
+      )}
+    </div>
+  );
+}
+
+function SlidesWindowContent({
+  content,
+  layout,
+  onLayout,
+  titleDone,
+  onTitle,
+  bulletDone,
+  onBullet,
+  presented,
+  onPresent,
+}: {
+  content: SlidesContent;
+  layout: string | null;
+  onLayout: (name: string) => void;
+  titleDone: boolean;
+  onTitle: () => void;
+  bulletDone: boolean;
+  onBullet: () => void;
+  presented: boolean;
+  onPresent: () => void;
+}) {
+  const [titleText, setTitleText] = useState("");
+  return (
+    <div className="dwin-body slides-body">
+      <p className="text-xs text-[var(--ink-soft)]">{content.brief}</p>
+      {!layout ? (
+        <div className="slides-layout-grid mt-3">
+          {content.layoutOptions.map((opt) => (
+            <button key={opt.name} className="slides-layout-card" onClick={() => onLayout(opt.name)}>
+              <span className="slides-layout-preview" data-layout={opt.name === content.correctLayoutName ? "match" : "other"} />
+              <b>{opt.name}</b>
+              <small>{opt.description}</small>
+            </button>
+          ))}
+        </div>
+      ) : (
+        <>
+          <div className="slide-canvas mt-3">
+            <input
+              className="slide-title-input"
+              placeholder={`Type: ${content.title}`}
+              value={titleText}
+              onChange={(e) => {
+                setTitleText(e.target.value);
+                if (e.target.value.trim() === content.title) onTitle();
+              }}
+            />
+            {bulletDone && <p className="slide-bullet">• {content.bulletSuggestion}</p>}
+          </div>
+          {!bulletDone && (
+            <button className="btn-sm mt-3" disabled={!titleDone} onClick={onBullet}>
+              {content.bulletPrompt}
+            </button>
+          )}
+          <button className="btn-sm mt-3" disabled={!titleDone || !bulletDone} onClick={onPresent}>
+            Present
+          </button>
+          {presented && <p className="text-sm text-[var(--mint)] mt-2">Slide presented.</p>}
+        </>
+      )}
+    </div>
+  );
+}
+
+function SupportWindowContent({
+  content,
+  read,
+  onRead,
+  category,
+  onCategory,
+  replied,
+  onReply,
+  resolved,
+  onResolve,
+}: {
+  content: SupportContent;
+  read: boolean;
+  onRead: () => void;
+  category: string | null;
+  onCategory: (name: string) => void;
+  replied: boolean;
+  onReply: (isCorrect: boolean) => void;
+  resolved: boolean;
+  onResolve: () => void;
+}) {
+  return (
+    <div className="dwin-body support-body">
+      {!read ? (
+        <button className="search-result" onClick={onRead}>
+          <b>NEW TICKET · {content.customerName.toUpperCase()}</b>
+          <strong>{content.ticketSubject}</strong>
+        </button>
+      ) : (
+        <>
+          <div className="support-ticket">
+            <div className="support-ticket-from">{content.customerName}</div>
+            <p>{content.ticketBody}</p>
+          </div>
+          <p className="copy-hint mt-3">Tag this ticket:</p>
+          <div className="support-tag-row">
+            {content.categories.map((c) => (
+              <button key={c} className={`support-tag ${category === c ? "active" : ""}`} onClick={() => onCategory(c)}>
+                {c}
+              </button>
+            ))}
+          </div>
+          <p className="copy-hint mt-3">Choose the response that matches the issue:</p>
+          <div className="grid gap-2 mt-1">
+            {content.responseOptions.map((opt) => (
+              <button key={opt.label} className="quiz-option" onClick={() => onReply(opt.isCorrect)} disabled={replied}>
+                {opt.body}
+              </button>
+            ))}
+          </div>
+          <button className="btn-sm mt-3" disabled={!category || !replied} onClick={onResolve}>
+            Mark resolved
+          </button>
+          {resolved && <p className="text-sm text-[var(--mint)] mt-2">Ticket resolved.</p>}
+        </>
+      )}
+    </div>
+  );
+}
+
+function CodeWindowContent({
+  content,
+  read,
+  onRead,
+  fixed,
+  onFix,
+  ran,
+  onRun,
+  saved,
+  onSave,
+}: {
+  content: CodeContent;
+  read: boolean;
+  onRead: () => void;
+  fixed: boolean;
+  onFix: () => void;
+  ran: boolean;
+  onRun: () => void;
+  saved: boolean;
+  onSave: () => void;
+}) {
+  return (
+    <div className="dwin-body code-body">
+      <div className="code-filebar">{content.fileName}</div>
+      {!read ? (
+        <button className="btn-sm mt-3" onClick={onRead}>
+          View failing test
+        </button>
+      ) : (
+        <>
+          <p className="text-xs text-[var(--ink-soft)] mt-2">{content.description}</p>
+          <pre className="code-block mt-3">
+            {content.lines.map((line, i) =>
+              i === content.buggyLineIndex ? (
+                <div
+                  key={i}
+                  className={fixed ? "code-line code-line-fixed" : "code-line code-line-buggy"}
+                  onClick={() => !fixed && onFix()}
+                >
+                  {fixed ? content.fixedText : line}
+                </div>
+              ) : (
+                <div key={i} className="code-line">
+                  {line}
+                </div>
+              )
+            )}
+          </pre>
+          <button className="btn-sm mt-3" disabled={!fixed} onClick={onRun}>
+            Run tests
+          </button>
+          {ran && <p className="code-test-pass mt-2">✓ {content.testName}</p>}
+          {ran && (
+            <button className="btn-sm mt-3" onClick={onSave}>
+              Save file
+            </button>
+          )}
+          {saved && <p className="text-sm text-[var(--mint)] mt-2">File saved.</p>}
+        </>
+      )}
     </div>
   );
 }
