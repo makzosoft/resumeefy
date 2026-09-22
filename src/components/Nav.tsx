@@ -1,8 +1,79 @@
 "use client";
 import Link from "next/link";
 import Image from "next/image";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { api, CurrentUser } from "@/lib/client";
+
+type NavLink = { href: string; label: string; blurb: string };
+type NavGroup = { label: string; items: NavLink[] };
+
+const TOOLS_GROUP: NavGroup = {
+  label: "Resume Tools",
+  items: [
+    { href: "/resume-builder", label: "Resume Builder", blurb: "Generate an ATS-ready resume with AI" },
+    { href: "/resume-analyzer", label: "Resume Analyzer", blurb: "Score and improve an existing resume" },
+  ],
+};
+
+const LEARN_GROUP: NavGroup = {
+  label: "Learn",
+  items: [
+    { href: "/courses", label: "Courses", blurb: "In-depth, instructor-led career courses" },
+    { href: "/blog", label: "Blog", blurb: "Career and job-search guidance" },
+  ],
+};
+
+const EARN_GROUP: NavGroup = {
+  label: "Earn",
+  items: [
+    { href: "/invite", label: "Invite & Earn", blurb: "Get credits for inviting friends" },
+    { href: "/refer", label: "Partner Program", blurb: "Earn commission as an affiliate" },
+  ],
+};
+
+function NavDropdown({ group }: { group: NavGroup }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    function onDocClick(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    }
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") setOpen(false);
+    }
+    document.addEventListener("mousedown", onDocClick);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDocClick);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, []);
+
+  return (
+    <div className="nav-dropdown" ref={ref}>
+      <button
+        type="button"
+        className={`nav-dropdown-trigger ${open ? "is-open" : ""}`}
+        aria-expanded={open}
+        onClick={() => setOpen((v) => !v)}
+      >
+        {group.label}
+        <svg width="9" height="6" viewBox="0 0 9 6" fill="none" aria-hidden="true">
+          <path d="M1 1l3.5 3.5L8 1" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      </button>
+      <div className={`nav-dropdown-panel ${open ? "is-open" : ""}`} role="menu">
+        {group.items.map((item) => (
+          <Link key={item.href} href={item.href} role="menuitem" onClick={() => setOpen(false)}>
+            <span className="ndp-label">{item.label}</span>
+            <span className="ndp-blurb">{item.blurb}</span>
+          </Link>
+        ))}
+      </div>
+    </div>
+  );
+}
 
 export default function Nav() {
   const [user, setUser] = useState<CurrentUser>(null);
@@ -17,12 +88,14 @@ export default function Nav() {
   }, []);
 
   useEffect(() => {
-    if (user) api<{balance:number}>("/api/payment?action=balance").then(r => setCredits(r.balance)).catch(() => {});
+    if (user) api<{ balance: number }>("/api/payment?action=balance").then((r) => setCredits(r.balance)).catch(() => {});
   }, [user]);
 
   useEffect(() => {
     document.body.style.overflow = open ? "hidden" : "";
-    return () => { document.body.style.overflow = ""; };
+    return () => {
+      document.body.style.overflow = "";
+    };
   }, [open]);
 
   async function logout() {
@@ -39,11 +112,12 @@ export default function Nav() {
         </Link>
 
         <nav aria-label="Primary navigation" className="desktop-nav">
-          <Link href="/assessment">Assessment</Link>
-          <Link href="/resume-analyzer">Resume Analyzer</Link>
-          <Link href="/resume-builder">Resume Builder</Link>
-          <Link href="/courses">Courses</Link>
-          <Link href="/blog">Blog</Link><Link href="/invite">Invite & earn</Link><Link href="/refer">Partner</Link>
+          <Link href="/assessment" className="nav-flagship">
+            Interview Prep
+          </Link>
+          <NavDropdown group={TOOLS_GROUP} />
+          <NavDropdown group={LEARN_GROUP} />
+          <NavDropdown group={EARN_GROUP} />
           <a href="#community">Community</a>
           {user?.role === "admin" && <Link href="/admin">Admin</Link>}
         </nav>
@@ -51,33 +125,79 @@ export default function Nav() {
         <div className="nav-actions">
           {!loaded ? null : user ? (
             <>
-              <Link href="/shop" className="nav-greeting">{credits === null ? "Credits" : `${credits} credits`} · Shop</Link><span className="nav-greeting">Hi, {user.name.split(" ")[0]}</span>
-              <button type="button" onClick={logout} className="nav-button nav-button-ghost">Log out</button>
+              <Link href="/shop" className="nav-greeting">
+                {credits === null ? "Credits" : `${credits} credits`} · Shop
+              </Link>
+              <span className="nav-greeting">Hi, {user.name.split(" ")[0]}</span>
+              <button type="button" onClick={logout} className="nav-button nav-button-ghost">
+                Log out
+              </button>
             </>
           ) : (
             <>
-              <Link href="/login" className="nav-button nav-button-ghost">Log in</Link>
-              <Link href="/signup" className="nav-button nav-button-primary">Sign up free</Link>
+              <Link href="/login" className="nav-button nav-button-ghost">
+                Log in
+              </Link>
+              <Link href="/signup" className="nav-button nav-button-primary">
+                Sign up free
+              </Link>
             </>
           )}
-          <button type="button" className="menu-toggle" aria-label="Open navigation" aria-expanded={open} onClick={() => setOpen((v) => !v)}>
-            <span /><span /><span />
+          <button
+            type="button"
+            className="menu-toggle"
+            aria-label="Open navigation"
+            aria-expanded={open}
+            onClick={() => setOpen((v) => !v)}
+          >
+            <span />
+            <span />
+            <span />
           </button>
         </div>
       </div>
 
       <div className={`mobile-menu ${open ? "is-open" : ""}`} aria-hidden={!open}>
         <div className="mobile-menu-inner">
-          <Link href="/assessment" onClick={() => setOpen(false)}>Assessment <span>↗</span></Link>
-          <Link href="/resume-analyzer" onClick={() => setOpen(false)}>Resume Analyzer <span>↗</span></Link>
-          <Link href="/resume-builder" onClick={() => setOpen(false)}>Resume Builder <span>↗</span></Link>
-          <Link href="/courses" onClick={() => setOpen(false)}>Courses <span>↗</span></Link>
-          <Link href="/blog" onClick={() => setOpen(false)}>Blog <span>↗</span></Link><Link href="/invite" onClick={() => setOpen(false)}>Invite friends <span>↗</span></Link><Link href="/refer" onClick={() => setOpen(false)}>Partner Program <span>↗</span></Link>
-          {user && <Link href="/shop" onClick={() => setOpen(false)}>Credits & Shop <span>↗</span></Link>}
-          <a href="#community" onClick={() => setOpen(false)}>Community <span>↓</span></a>
-          {user?.role === "admin" && <Link href="/admin" onClick={() => setOpen(false)}>Admin <span>↗</span></Link>}
-          {!loaded && null}
-          {!user && loaded && <Link href="/login" onClick={() => setOpen(false)}>Log in <span>↗</span></Link>}
+          <Link href="/assessment" onClick={() => setOpen(false)}>
+            Interview Prep <span>↗</span>
+          </Link>
+          <p className="mobile-menu-section">Resume tools</p>
+          {TOOLS_GROUP.items.map((item) => (
+            <Link key={item.href} href={item.href} onClick={() => setOpen(false)}>
+              {item.label} <span>↗</span>
+            </Link>
+          ))}
+          <p className="mobile-menu-section">Learn</p>
+          {LEARN_GROUP.items.map((item) => (
+            <Link key={item.href} href={item.href} onClick={() => setOpen(false)}>
+              {item.label} <span>↗</span>
+            </Link>
+          ))}
+          <p className="mobile-menu-section">Earn</p>
+          {EARN_GROUP.items.map((item) => (
+            <Link key={item.href} href={item.href} onClick={() => setOpen(false)}>
+              {item.label} <span>↗</span>
+            </Link>
+          ))}
+          {user && (
+            <Link href="/shop" onClick={() => setOpen(false)}>
+              Credits & Shop <span>↗</span>
+            </Link>
+          )}
+          <a href="#community" onClick={() => setOpen(false)}>
+            Community <span>↓</span>
+          </a>
+          {user?.role === "admin" && (
+            <Link href="/admin" onClick={() => setOpen(false)}>
+              Admin <span>↗</span>
+            </Link>
+          )}
+          {!user && loaded && (
+            <Link href="/login" onClick={() => setOpen(false)}>
+              Log in <span>↗</span>
+            </Link>
+          )}
         </div>
       </div>
     </header>
