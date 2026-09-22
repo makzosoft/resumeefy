@@ -4,6 +4,10 @@ import Nav from "@/components/Nav";
 import ReferralCapture from "@/components/ReferralCapture";
 import CreditGate from "@/components/CreditGate";
 import AiUnavailableBanner from "@/components/AiUnavailableBanner";
+import NewsletterModal from "@/components/NewsletterModal";
+import FloatingCreditWidget from "@/components/FloatingCreditWidget";
+import DailyRewardModal from "@/components/DailyRewardModal";
+import ThemeToggle from "@/components/ThemeToggle";
 import { SpeedInsights } from "@vercel/speed-insights/next";
 import { Analytics } from "@vercel/analytics/next";
 
@@ -45,6 +49,12 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="en">
       <head>
+        <script
+          dangerouslySetInnerHTML={{
+            __html:
+              "try{var t=localStorage.getItem('resumeefy_theme');if(t==='dark'||(!t&&window.matchMedia('(prefers-color-scheme: dark)').matches)){document.documentElement.setAttribute('data-theme','dark');}}catch(e){}",
+          }}
+        />
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
         <link
@@ -80,6 +90,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         {children}
         <CreditGate />
         <AiUnavailableBanner />
+        <NewsletterModal />
+        <FloatingCreditWidget />
+        <DailyRewardModal />
         <SpeedInsights />
         <Analytics />
       </body>
