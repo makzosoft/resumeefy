@@ -254,22 +254,7 @@ export async function getUserProfile(userId: string) {
   return data ?? undefined;
 }
 
-export const CREDIT_COSTS = {
-  resume_boost: 100,
-  resume_professional: 140,
-  resume_executive: 180,
-  resume_international: 220,
-  resume_ai: 20,
-  job_match: 10,
-  resume_quality: 8,
-  interview: 15,
-  interview_feedback: 8,
-  desktop_sim: 20,
-  assessment_module: 10,
-  course_generation: 25,
-  course_late_unlock: 20,
-  course_certificate: 40,
-} as const;
+export { CREDIT_COSTS } from "./credit-costs";
 
 export const CREDIT_PACKS = [
   { id: "ng_100", credits: 100, amount: 5000, currency: "NGN", label: "Starter" },
@@ -492,6 +477,24 @@ export async function getCourseCertificates(userId: string) {
     .limit(100);
   throwDb(error);
   return data ?? [];
+}
+
+export async function getUnlockedLessons(userId: string, courseSlug: string): Promise<string[]> {
+  const { data, error } = await db.from("course_lesson_unlocks").select("lesson_id").eq("user_id", userId).eq("course_slug", courseSlug);
+  throwDb(error);
+  return (data ?? []).map((row: { lesson_id: string }) => row.lesson_id);
+}
+
+export async function unlockCourseLesson(userId: string, courseSlug: string, lessonId: string, cost: number) {
+  const already = await getUnlockedLessons(userId, courseSlug);
+  if (already.includes(lessonId)) return { alreadyUnlocked: true, balance: (await getCreditBalance(userId)).balance };
+  const spend = await spendCredits(userId, cost, "course_lesson", `${courseSlug}:${lessonId}`);
+  const { error } = await db.from("course_lesson_unlocks").insert({ user_id: userId, course_slug: courseSlug, lesson_id: lessonId });
+  // The credits are already spent at this point. A duplicate-row error here
+  // means a concurrent request unlocked the same lesson a moment earlier —
+  // not a reason to fail the request or charge the user again.
+  if (error && !String(error.message || error).includes("duplicate")) throwDb(error);
+  return { alreadyUnlocked: false, balance: spend.balance };
 }
 
 export async function getAffiliateDashboard(userId: string) {
