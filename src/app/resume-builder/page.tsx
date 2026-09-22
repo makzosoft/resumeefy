@@ -223,7 +223,7 @@ function ResumeBuilderInner() {
           </div>
           <div className="mt-3">
             <div className="text-xs font-bold text-[var(--ink-soft)] mb-2">RESUME STYLE</div>
-            <div className="flex flex-wrap gap-2">{([['boost','CV Boost'],['professional','Professional'],['executive','Executive'],['international','International CV']] as const).map(([id,label]) => <button type="button" key={id} onClick={() => setTier(id)} className={`px-3 py-2 rounded-full text-xs font-bold border ${tier===id?'bg-[var(--blue)] text-white border-[var(--blue)]':'bg-white border-[var(--line)]'}`}>{label} · {tierCosts[id]} credits</button>)}</div>
+            <div className="flex flex-wrap gap-2">{([['boost','CV Boost'],['professional','Professional'],['executive','Executive'],['international','International CV']] as const).map(([id,label]) => <button type="button" key={id} onClick={() => setTier(id)} className={`px-3 py-2 rounded-full text-xs font-bold border transition-all duration-150 active:scale-95 ${tier===id?'bg-[var(--blue)] text-white border-[var(--blue)] -translate-y-0.5':'bg-white border-[var(--line)] hover:-translate-y-0.5'}`}>{label} · {tierCosts[id]} credits</button>)}</div>
           </div>
 <textarea aria-label="Professional summary" className="input min-h-[100px]" placeholder="Summary" value={data.summary} onChange={(e) => setData({ ...data, summary: e.target.value })} />
           <textarea aria-label="Recent experience" className="input min-h-[80px]" placeholder="Recent experience" value={data.exp1} onChange={(e) => setData({ ...data, exp1: e.target.value })} />
