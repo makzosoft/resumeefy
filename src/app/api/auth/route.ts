@@ -14,7 +14,6 @@ import {
   trackEvent,
   recordUserReferral,
   completeUserReferral,
-  claimDailyLoginReward,
 } from "@/lib/data";
 
 const loginSchema = z.object({
@@ -56,8 +55,6 @@ async function attachReferral(userId: string, email?: string) {
     const pending = await getUserInviteReferralByEmail(email).catch(() => undefined);
     if (pending?.invite_code) await completeUserReferral(userId, email, pending.invite_code).catch(() => {});
   }
-
-  await claimDailyLoginReward(userId).catch(() => {});
 }
 
 function errorCode(error: unknown): string | undefined {
@@ -79,6 +76,20 @@ export async function POST(req: NextRequest) {
   if (action === "logout") {
     await clearSessionCookie();
     return NextResponse.json({ ok: true });
+  }
+
+  // Dev-only shortcut for local testing: signs in as the fixed demo user
+  // without touching Supabase at all. Gated on the server-only DEMO_MODE
+  // flag (RESUMEEFY_DEMO_MODE=true) — with that unset, as it should be in
+  // any real deployment, this 404s regardless of what the client sends.
+  // Remove the env var (and the button that calls this) before shipping.
+  if (action === "dev_skip") {
+    const { DEMO_MODE, DEMO_NAME } = await import("@/lib/demo");
+    if (!DEMO_MODE) {
+      return NextResponse.json({ error: "Not found" }, { status: 404 });
+    }
+    const user = await signIn("", "");
+    return NextResponse.json({ id: user.id, name: DEMO_NAME, email: user.email, role: "user" });
   }
 
   if (action === "confirm") {
