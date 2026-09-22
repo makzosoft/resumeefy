@@ -3,6 +3,7 @@
 import Link from "next/link";
 import Image from "next/image";
 import { useEffect, useState } from "react";
+import { api } from "@/lib/client";
 
 const modules = [
   { no: "01", title: "Resume Analyzer", text: "See what weakens your CV and what deserves attention before you apply.", href: "/resume-analyzer", tone: "blue" },
@@ -20,6 +21,40 @@ const scenes = [
   { eyebrow: "02 / IMPROVE", title: "Know exactly what to fix.", metric: "92%", label: "Resume strength", bars: [92, 78, 86] },
   { eyebrow: "03 / MOVE", title: "Walk into the opportunity prepared.", metric: "READY", label: "Next step unlocked", bars: [96, 94, 98] },
 ];
+
+function NewsletterSection() {
+  const [email, setEmail] = useState("");
+  const [status, setStatus] = useState<"idle" | "sending" | "done">("idle");
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    setStatus("sending");
+    try {
+      await api("/api/leads", { method: "POST", body: JSON.stringify({ email, source: "newsletter" }) });
+      setStatus("done");
+    } catch {
+      setStatus("idle");
+    }
+  }
+
+  return (
+    <div className="newsletter-card">
+      <div>
+        <span className="section-label light">STAY SHARP</span>
+        <h2>Job alerts and career tips, weekly.</h2>
+        <p>New job openings, resume and interview tips, and product updates — one useful email, no spam. Unsubscribe any time.</p>
+      </div>
+      {status === "done" ? (
+        <span className="newsletter-done">You&apos;re in — check your inbox soon.</span>
+      ) : (
+        <form onSubmit={submit} className="newsletter-form">
+          <input type="email" required placeholder="you@email.com" value={email} onChange={(e) => setEmail(e.target.value)} />
+          <button disabled={status === "sending"}>{status === "sending" ? "Joining…" : "Subscribe"}</button>
+        </form>
+      )}
+    </div>
+  );
+}
 
 export default function Home() {
   const [scene, setScene] = useState(0);
@@ -163,6 +198,12 @@ export default function Home() {
         <h2>Your next opportunity deserves a <em>better prepared</em> you.</h2>
         <p>Start free. Find the gaps. Build the confidence. Make the next application count.</p>
         <div className="hero-actions centered"><Link href="/assessment" className="brand-btn brand-btn-gold">Start free assessment <span>↗</span></Link><Link href="/resume-builder" className="brand-btn brand-btn-outline-light">Build your resume <span>→</span></Link></div>
+      </section>
+
+      <section className="newsletter-section home-reveal">
+        <div className="max-w-6xl mx-auto px-6">
+          <NewsletterSection />
+        </div>
       </section>
 
       <footer className="site-footer">
