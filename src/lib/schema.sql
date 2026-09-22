@@ -158,12 +158,31 @@ create table if not exists public.course_submissions (
 create table if not exists public.course_certificates (
   id text primary key,
   user_id uuid not null references public.users(id) on delete cascade,
-  course_id text not null references public.courses(id) on delete cascade,
+  -- Not a foreign key on purpose: this now covers both AI-generated courses
+  -- (rows in public.courses) and the curated, statically-written courses
+  -- shipped in src/lib/courses-content.ts, which use their own slug here
+  -- instead of a courses.id.
+  course_id text not null,
   certificate_id text not null unique,
   created_at timestamptz not null default now()
 );
 create index if not exists idx_course_certificates_user on public.course_certificates(user_id);
 alter table public.course_certificates enable row level security;
+
+-- Tracks which lessons of a curated (statically-written) course a user has
+-- paid credits to unlock. A course's first lesson is always free and never
+-- gets a row here; every lesson after that requires one row per user per
+-- lesson before its content is returned by the lessons API.
+create table if not exists public.course_lesson_unlocks (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references public.users(id) on delete cascade,
+  course_slug text not null,
+  lesson_id text not null,
+  unlocked_at timestamptz not null default now(),
+  unique(user_id, course_slug, lesson_id)
+);
+create index if not exists idx_lesson_unlocks_user_course on public.course_lesson_unlocks(user_id, course_slug);
+alter table public.course_lesson_unlocks enable row level security;
 
 create table if not exists public.blog_posts (
   id text primary key,
