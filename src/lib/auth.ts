@@ -192,9 +192,11 @@ async function setDemoCookie() {
 
 export async function getCurrentSession(): Promise<SessionPayload | null> {
   if (DEMO_MODE) {
-    const jar = await cookies();
-    const token = jar.get(ACCESS_COOKIE)?.value;
-    if (!token) return null;
+    // Every request is treated as already signed in, site-wide — no login
+    // step, cookie, or button click needed anywhere. This only ever runs
+    // when RESUMEEFY_DEMO_MODE=true, which should never be true in a real
+    // deployment (see .env.example) — turning it off restores normal
+    // Supabase-backed sign-in immediately, with no other code changes.
     return { sub: DEMO_USER_ID, email: DEMO_EMAIL, role: "user", name: DEMO_NAME };
   }
 
