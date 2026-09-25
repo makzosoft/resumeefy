@@ -4,7 +4,7 @@
 export const DEMO_MODE = process.env.RESUMEEFY_DEMO_MODE === "true";
 export const DEMO_USER_ID = "demo_user_resumeefy";
 export const DEMO_EMAIL = "demo@resumeefy.local";
-export const DEMO_NAME = "Demo User";
+export const DEMO_NAME = "Makzo";
 
 // Client-side twin of RESUMEEFY_DEMO_MODE, used ONLY to decide whether the
 // "Skip sign-in" dev button renders on the login/signup pages. The actual
