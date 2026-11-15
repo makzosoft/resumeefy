@@ -7,8 +7,17 @@ import { getCourseBySlug, INSTRUCTORS } from "@/lib/courses-content";
 import { InstructorAvatar } from "@/components/InstructorAvatar";
 import { LessonNarrator } from "@/components/LessonNarrator";
 import { BulletBootcampGame } from "@/components/BulletBootcampGame";
+import { FixThisResumeGame } from "@/components/FixThisResumeGame";
+import { TailorItGame } from "@/components/TailorItGame";
 import { CreditCoin } from "@/components/CreditCoin";
 import { CREDIT_COSTS } from "@/lib/credit-costs";
+
+// Lessons with a dedicated hands-on practice component instead of the generic interview-simulator nudge.
+const LESSON_PRACTICE_GAMES: Record<string, () => JSX.Element> = {
+  bullets: BulletBootcampGame,
+  "resume-mistakes-that-disqualify": FixThisResumeGame,
+  "skills-section": TailorItGame,
+};
 
 function progressKey(slug: string) {
   return `resumeefy_course_progress_${slug}`;
@@ -101,6 +110,7 @@ export default function CourseViewer() {
   }
 
   const lesson = course.lessons[activeLesson];
+  const PracticeGame = LESSON_PRACTICE_GAMES[lesson.id];
   const completedCount = course.lessons.filter((l) => progress[l.id]).length;
   const allComplete = completedCount === course.lessons.length;
 
@@ -206,7 +216,13 @@ export default function CourseViewer() {
         ) : (
         <article className="card p-7 lesson-content">
           <h2 className="font-display text-2xl font-semibold">{lesson.title}</h2>
-          <LessonNarrator paragraphs={lesson.body} voiceProfile={instructor.voiceProfile} gradient={instructor.gradient} />
+          <LessonNarrator
+            intro={lesson.intro}
+            sections={lesson.sections}
+            paragraphs={lesson.body}
+            voiceProfile={instructor.voiceProfile}
+            gradient={instructor.gradient}
+          />
 
           {lesson.tryThis && (
             <div className="try-this mt-6">
@@ -239,9 +255,9 @@ export default function CourseViewer() {
           {answerState === "correct" && (
             <div className="mt-8">
               <span className="text-xs font-bold text-[var(--blue)]">PRACTICE WHAT YOU LEARNED</span>
-              {lesson.id === "bullets" ? (
+              {PracticeGame ? (
                 <div className="mt-3">
-                  <BulletBootcampGame />
+                  <PracticeGame />
                 </div>
               ) : (
                 <div className="practice-nudge mt-3">

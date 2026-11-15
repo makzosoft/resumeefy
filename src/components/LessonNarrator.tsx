@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import { TalkingInstructorAvatar } from "@/components/TalkingInstructorAvatar";
+import { LESSON_ILLUSTRATIONS } from "@/components/LessonIllustrations";
 
 type VoiceProfile = { pitch: number; rate: number; preferGender: "male" | "female" };
 
@@ -26,11 +27,18 @@ function splitIntoWords(text: string): { word: string; start: number }[] {
 }
 
 export function LessonNarrator({
+  intro,
+  sections,
   paragraphs,
   voiceProfile,
   gradient,
 }: {
-  paragraphs: string[];
+  /** Structured format: opening hook shown before the named sections. */
+  intro?: string;
+  /** Structured format: named sections, each rendered with a real heading. */
+  sections?: { heading: string; paragraphs: string[]; illustration?: string }[];
+  /** Legacy format: a flat list of paragraphs with no section headings. Provide this OR intro+sections, not both. */
+  paragraphs?: string[];
   voiceProfile: VoiceProfile;
   gradient: [string, string];
 }) {
@@ -41,6 +49,34 @@ export function LessonNarrator({
   const [mouthOpen, setMouthOpen] = useState<0 | 1 | 2>(0);
   const mouthTimer = useRef<number | null>(null);
   const stoppedRef = useRef(false);
+
+  // Both input formats collapse to one flat playback list, with a parallel
+  // list of "heading to show right before this paragraph" (or null) — this
+  // is what lets a single play/pause/word-tracking implementation serve
+  // both a legacy flat lesson and a deep, sectioned one.
+  const flatParagraphs: string[] = [];
+  const headingBeforeIndex: (string | null)[] = [];
+  const illustrationBeforeIndex: (string | null)[] = [];
+  if (sections) {
+    if (intro) {
+      flatParagraphs.push(intro);
+      headingBeforeIndex.push(null);
+      illustrationBeforeIndex.push(null);
+    }
+    for (const section of sections) {
+      section.paragraphs.forEach((p, i) => {
+        flatParagraphs.push(p);
+        headingBeforeIndex.push(i === 0 ? section.heading : null);
+        illustrationBeforeIndex.push(i === 0 ? section.illustration ?? null : null);
+      });
+    }
+  } else {
+    for (const p of paragraphs ?? []) {
+      flatParagraphs.push(p);
+      headingBeforeIndex.push(null);
+      illustrationBeforeIndex.push(null);
+    }
+  }
 
   useEffect(() => {
     setSupported(typeof window !== "undefined" && "speechSynthesis" in window);
@@ -66,12 +102,12 @@ export function LessonNarrator({
   }
 
   function speakParagraph(index: number) {
-    if (index >= paragraphs.length) {
+    if (index >= flatParagraphs.length) {
       setPlaying(false);
       stopMouthLoop();
       return;
     }
-    const utter = new SpeechSynthesisUtterance(paragraphs[index]);
+    const utter = new SpeechSynthesisUtterance(flatParagraphs[index]);
     utter.pitch = voiceProfile.pitch;
     utter.rate = voiceProfile.rate;
     const voice = pickVoice(voiceProfile);
@@ -121,24 +157,33 @@ export function LessonNarrator({
         </button>
       </div>
       <div className="lesson-narrator-body">
-        {paragraphs.map((para, pIndex) =>
-          playing && pIndex === activeParagraph ? (
-            <p key={pIndex} className="mt-4 leading-relaxed lesson-narrator-active-para">
-              {splitIntoWords(para).map((w, i) => {
-                const isActive = activeWordStart !== null && w.start === activeWordStart;
-                return (
-                  <span key={i} className={isActive ? "narrator-word-active" : undefined}>
-                    {w.word}{" "}
-                  </span>
-                );
-              })}
-            </p>
-          ) : (
-            <p key={pIndex} className={`mt-4 leading-relaxed ${playing ? "lesson-narrator-dim" : ""}`}>
-              {para}
-            </p>
-          )
-        )}
+        {flatParagraphs.map((para, pIndex) => {
+          const IllustrationComp = illustrationBeforeIndex[pIndex] ? LESSON_ILLUSTRATIONS[illustrationBeforeIndex[pIndex]!] : null;
+          return (
+            <div key={pIndex}>
+              {headingBeforeIndex[pIndex] && <h3 className="lesson-section-heading">{headingBeforeIndex[pIndex]}</h3>}
+              {IllustrationComp && (
+                <div className="lesson-illustration">
+                  <IllustrationComp />
+                </div>
+              )}
+              {playing && pIndex === activeParagraph ? (
+                <p className="mt-4 leading-relaxed lesson-narrator-active-para">
+                  {splitIntoWords(para).map((w, i) => {
+                    const isActive = activeWordStart !== null && w.start === activeWordStart;
+                    return (
+                      <span key={i} className={isActive ? "narrator-word-active" : undefined}>
+                        {w.word}{" "}
+                      </span>
+                    );
+                  })}
+                </p>
+              ) : (
+                <p className={`mt-4 leading-relaxed ${playing ? "lesson-narrator-dim" : ""}`}>{para}</p>
+              )}
+            </div>
+          );
+        })}
       </div>
     </div>
   );
