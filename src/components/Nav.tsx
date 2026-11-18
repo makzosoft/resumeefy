@@ -15,22 +15,6 @@ const TOOLS_GROUP: NavGroup = {
   ],
 };
 
-const LEARN_GROUP: NavGroup = {
-  label: "Learn",
-  items: [
-    { href: "/courses", label: "Courses", blurb: "In-depth, instructor-led career courses" },
-    { href: "/blog", label: "Blog", blurb: "Career and job-search guidance" },
-  ],
-};
-
-const EARN_GROUP: NavGroup = {
-  label: "Earn",
-  items: [
-    { href: "/invite", label: "Invite & Earn", blurb: "Get credits for inviting friends" },
-    { href: "/refer", label: "Partner Program", blurb: "Earn commission as an affiliate" },
-  ],
-};
-
 function NavDropdown({ group }: { group: NavGroup }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -116,9 +100,8 @@ export default function Nav() {
             Interview Prep
           </Link>
           <NavDropdown group={TOOLS_GROUP} />
-          <NavDropdown group={LEARN_GROUP} />
-          <NavDropdown group={EARN_GROUP} />
-          <a href="#community">Community</a>
+          <Link href="/courses">Courses</Link>
+          <Link href="/blog">Blog</Link>
           {user?.role === "admin" && <Link href="/admin">Admin</Link>}
         </nav>
 
@@ -162,32 +145,22 @@ export default function Nav() {
           <Link href="/assessment" onClick={() => setOpen(false)}>
             Interview Prep <span>↗</span>
           </Link>
-          <p className="mobile-menu-section">Resume tools</p>
           {TOOLS_GROUP.items.map((item) => (
             <Link key={item.href} href={item.href} onClick={() => setOpen(false)}>
               {item.label} <span>↗</span>
             </Link>
           ))}
-          <p className="mobile-menu-section">Learn</p>
-          {LEARN_GROUP.items.map((item) => (
-            <Link key={item.href} href={item.href} onClick={() => setOpen(false)}>
-              {item.label} <span>↗</span>
-            </Link>
-          ))}
-          <p className="mobile-menu-section">Earn</p>
-          {EARN_GROUP.items.map((item) => (
-            <Link key={item.href} href={item.href} onClick={() => setOpen(false)}>
-              {item.label} <span>↗</span>
-            </Link>
-          ))}
+          <Link href="/courses" onClick={() => setOpen(false)}>
+            Courses <span>↗</span>
+          </Link>
+          <Link href="/blog" onClick={() => setOpen(false)}>
+            Blog <span>↗</span>
+          </Link>
           {user && (
             <Link href="/shop" onClick={() => setOpen(false)}>
               Credits & Shop <span>↗</span>
             </Link>
           )}
-          <a href="#community" onClick={() => setOpen(false)}>
-            Community <span>↓</span>
-          </a>
           {user?.role === "admin" && (
             <Link href="/admin" onClick={() => setOpen(false)}>
               Admin <span>↗</span>
@@ -196,6 +169,11 @@ export default function Nav() {
           {!user && loaded && (
             <Link href="/login" onClick={() => setOpen(false)}>
               Log in <span>↗</span>
+            </Link>
+          )}
+          {!user && loaded && (
+            <Link href="/signup" onClick={() => setOpen(false)}>
+              Sign up free <span>↗</span>
             </Link>
           )}
         </div>
