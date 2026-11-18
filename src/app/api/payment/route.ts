@@ -9,7 +9,6 @@ import { getLocalizedCreditPacks } from "@/lib/pricing";
 import { initiatePayment, isValidWebhookSignature, verifyTransaction } from "@/lib/flutterwave";
 import { completeCreditPurchase, createCreditPurchase, failCreditPurchase, getAffiliateByCode, getCreditBalance, getCreditPurchase, trackEvent } from "@/lib/data";
 import { newId } from "@/lib/db";
-import { DEMO_MODE } from "@/lib/demo";
 
 const buySchema = z.object({ packId: z.string().min(2) });
 const spendSchema = z.object({ amount: z.number().int().positive().max(1000), feature: z.string().min(2), referenceId: z.string().optional() });
@@ -30,7 +29,6 @@ export async function GET(req: NextRequest) {
     if (!txRef || !transactionId) return NextResponse.json({ error: "Missing transaction reference" }, { status: 400 });
     const purchase = await getCreditPurchase(txRef); if (!purchase || purchase.user_id !== session.sub) return NextResponse.json({ error: "Unknown transaction" }, { status: 404 });
     if (purchase.status === "successful") return NextResponse.json({ status: "successful", balance: await getCreditBalance(session.sub) });
-    if (DEMO_MODE) { await completeCreditPurchase(txRef); await trackEvent("credit_purchase_success", { userId: session.sub, meta: { txRef, credits: purchase.credits, demo: true } }); return NextResponse.json({ status: "successful", balance: await getCreditBalance(session.sub), demo: true }); }
     const verified = await verifyTransaction(transactionId);
     if (verified.status === "successful" && verified.amount >= Number(purchase.amount) && verified.currency === purchase.currency) {
       await completeCreditPurchase(txRef); await trackEvent("credit_purchase_success", { userId: session.sub, meta: { txRef, credits: purchase.credits } });
@@ -69,11 +67,6 @@ export async function POST(req: NextRequest) {
   const txRef = newId("credits");
   try {
     await createCreditPurchase(session.sub, pack, txRef, affiliateData);
-    if (DEMO_MODE) {
-      await completeCreditPurchase(txRef);
-      await trackEvent("credit_purchase_success", { userId: session.sub, meta: { txRef, credits: pack.credits, amount: pack.amount, currency: pack.currency, demo: true } });
-      return NextResponse.json({ link: `${process.env.APP_URL || "http://localhost:3000"}/shop?demo_payment=success`, txRef, pack, affiliate: affiliate?.code ?? null, demo: true });
-    }
     const paymentCountry = pricing.currency === "USD" && pricing.country !== "US" ? "NG" : pricing.country;
     const { link } = await initiatePayment({ txRef, amount: pack.amount, currency: pack.currency, country: paymentCountry, customerEmail: session.email, customerName: session.name, redirectPath: `/shop?payment=success&tx_ref=${encodeURIComponent(txRef)}` });
     await trackEvent("credit_purchase_initiated", { userId: session.sub, meta: { packId: pack.id, credits: pack.credits, amount: pack.amount, currency: pack.currency, country, affiliateCode: affiliate?.code ?? null } });

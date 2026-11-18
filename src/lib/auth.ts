@@ -1,13 +1,12 @@
 import { cookies } from "next/headers";
 import { getUserProfile } from "./data";
-import { DEMO_MODE, DEMO_USER_ID, DEMO_EMAIL, DEMO_NAME } from "./demo";
 
 const ACCESS_COOKIE = "resumeefy_sb_access";
 const REFRESH_COOKIE = "resumeefy_sb_refresh";
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
-if (!DEMO_MODE && (!SUPABASE_URL || !SUPABASE_ANON_KEY)) {
+if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
   throw new Error("Missing SUPABASE_URL and SUPABASE_ANON_KEY environment variables");
 }
 
@@ -61,10 +60,6 @@ function authError(message: string, code?: string) {
 }
 
 export async function signIn(email: string, password: string) {
-  if (DEMO_MODE) {
-    await setDemoCookie();
-    return { id: DEMO_USER_ID, email: email || DEMO_EMAIL };
-  }
   const response = await authRequest("token?grant_type=password", {
     method: "POST",
     body: JSON.stringify({ email, password }),
@@ -86,11 +81,6 @@ export async function signIn(email: string, password: string) {
 }
 
 export async function signUp(email: string, password: string, name: string) {
-  if (DEMO_MODE) {
-    await setDemoCookie();
-    return { user: { id: DEMO_USER_ID, email: email || DEMO_EMAIL }, hasSession: true };
-  }
-
   // Explicit redirect target for the confirmation email — without this,
   // Supabase falls back to whatever Site URL is set in the dashboard, which
   // is easy to leave stale or unset and is the most common cause of
@@ -145,7 +135,6 @@ async function setAuthCookies(accessToken: string, refreshToken: string) {
 }
 
 export async function resendConfirmation(email: string): Promise<void> {
-  if (DEMO_MODE) return;
   const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || process.env.APP_URL || "https://resumeefy.com";
   const response = await authRequest("resend", {
     method: "POST",
@@ -179,27 +168,7 @@ async function refreshSession(refreshToken: string) {
   return true;
 }
 
-async function setDemoCookie() {
-  const jar = await cookies();
-  jar.set(ACCESS_COOKIE, DEMO_USER_ID, {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
-    sameSite: "lax",
-    path: "/",
-    maxAge: 60 * 60 * 24 * 30,
-  });
-}
-
 export async function getCurrentSession(): Promise<SessionPayload | null> {
-  if (DEMO_MODE) {
-    // Every request is treated as already signed in, site-wide — no login
-    // step, cookie, or button click needed anywhere. This only ever runs
-    // when RESUMEEFY_DEMO_MODE=true, which should never be true in a real
-    // deployment (see .env.example) — turning it off restores normal
-    // Supabase-backed sign-in immediately, with no other code changes.
-    return { sub: DEMO_USER_ID, email: DEMO_EMAIL, role: "user", name: DEMO_NAME };
-  }
-
   const jar = await cookies();
   let access = jar.get(ACCESS_COOKIE)?.value;
   const refresh = jar.get(REFRESH_COOKIE)?.value;

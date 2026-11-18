@@ -4,7 +4,6 @@
  * This module must only run on the server and uses the Supabase service role key.
  */
 
-import { DEMO_MODE, DEMO_USER_ID, DEMO_EMAIL, DEMO_NAME } from "./demo";
 
 type DbResult<T> = { data: T | null; error: { message: string } | null; count?: number | null };
 
@@ -26,18 +25,15 @@ type QueryState = {
 const baseUrl = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
 const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
-// Small in-process store used only by demo mode. It intentionally disappears when the server restarts.
-const demoTables: Record<string, any[]> = {
-  users: [{ id: DEMO_USER_ID, name: DEMO_NAME, email: DEMO_EMAIL, role: "user", invite_code: "DEMO123", created_at: new Date().toISOString() }],
-  credit_wallets: [{ user_id: DEMO_USER_ID, balance: 500, lifetime_earned: 500, lifetime_spent: 0 }],
-  tracking_events: [], assessments: [], resumes: [], leads: [], payments: [], credit_purchases: [], credit_transactions: [],
-  affiliates: [], affiliate_commissions: [], affiliate_payout_requests: [], affiliate_referral_leads: [], user_referrals: [], daily_login_rewards: [],
-  courses: [], course_submissions: [], blog_posts: [], blog_events: []
-};
-
-if (!DEMO_MODE && (!baseUrl || !serviceRoleKey)) {
+if (!baseUrl || !serviceRoleKey) {
   throw new Error("Missing SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY environment variables");
 }
+
+// Legacy service_role keys are JWTs and are sent as both `apikey` and a Bearer token.
+// The newer `sb_secret_...` keys are not JWTs and must only be sent in the `apikey` header.
+const authHeaders: Record<string, string> = serviceRoleKey.startsWith("eyJ")
+  ? { apikey: serviceRoleKey, Authorization: `Bearer ${serviceRoleKey}` }
+  : { apikey: serviceRoleKey };
 
 function encodeFilterValue(value: Filter["value"]): string {
   if (value === null) return "null";
@@ -45,32 +41,7 @@ function encodeFilterValue(value: Filter["value"]): string {
   return String(value).replace(/([,()])/g, "\\$1");
 }
 
-function demoExecute<T>(state: QueryState): DbResult<T> {
-  const rows = demoTables[state.table] || (demoTables[state.table] = []);
-  const matches = rows.filter((row) =>
-    state.filters.every((f) =>
-      f.op === "gte" ? row[f.column] >= (f.value as any) : row[f.column] === f.value
-    )
-  );
-  if (state.method === "POST") {
-    const incoming = Array.isArray(state.body) ? state.body : [state.body];
-    rows.push(...incoming.map((x) => ({ ...(x as any) })));
-    return { data: null, error: null };
-  }
-  if (state.method === "PATCH") {
-    matches.forEach((row) => Object.assign(row, state.body as any));
-    return { data: null, error: null };
-  }
-  let result = [...matches];
-  if (state.order) result.sort((a,b) => { const av=a[state.order!.column], bv=b[state.order!.column]; return (av===bv?0:(av>bv?1:-1)) * (state.order!.ascending?1:-1); });
-  if (state.limit !== undefined) result = result.slice(0, state.limit);
-  if (state.single) return { data: (result[0] ?? null) as T, error: null, count: result.length };
-  if (state.head) return { data: null, error: null, count: matches.length };
-  return { data: result as T, error: null, count: matches.length };
-}
-
 async function execute<T>(state: QueryState): Promise<DbResult<T>> {
-  if (DEMO_MODE) return demoExecute<T>(state);
   try {
     const params = new URLSearchParams();
     if (state.method === "GET") params.set("select", state.select || "*");
@@ -79,8 +50,7 @@ async function execute<T>(state: QueryState): Promise<DbResult<T>> {
     for (const filter of state.filters) params.set(filter.column, `${filter.op}.${encodeFilterValue(filter.value)}`);
 
     const headers: Record<string, string> = {
-      apikey: serviceRoleKey!,
-      Authorization: `Bearer ${serviceRoleKey}`,
+      ...authHeaders,
       Accept: "application/json",
     };
     if (state.method === "POST") {
@@ -158,22 +128,10 @@ export function newId(prefix: string): string {
 }
 
 export async function rpc<T = any>(fn: string, args: Record<string, unknown> = {}): Promise<DbResult<T>> {
-  if (DEMO_MODE) {
-    const userId = String(args.p_user_id || args.p_invitee_user_id || DEMO_USER_ID);
-    const wallet = (demoTables.credit_wallets.find((x) => x.user_id === userId) || (() => { const x={user_id:userId,balance:100}; demoTables.credit_wallets.push(x); return x; })());
-    if (fn === "ensure_credit_wallet") return { data: wallet.balance as T, error: null };
-    if (fn === "spend_credits") { const amount=Number(args.p_amount||0); if(wallet.balance<amount) return {data:null,error:{message:"INSUFFICIENT_CREDITS"}}; wallet.balance-=amount; demoTables.credit_transactions.push({id:newId("ctx"),user_id:userId,amount:-amount,type:"spend",feature:args.p_feature||"demo",created_at:new Date().toISOString()}); return {data:{balance:wallet.balance} as T,error:null}; }
-    if (fn === "add_credits") { const amount=Number(args.p_amount||0); wallet.balance+=amount; demoTables.credit_transactions.push({id:newId("ctx"),user_id:userId,amount,type:args.p_type||"reward",feature:args.p_feature||null,created_at:new Date().toISOString()}); return {data:{balance:wallet.balance} as T,error:null}; }
-    if (fn === "record_user_referral") return {data:null,error:null};
-    if (fn === "complete_user_referral") return {data:null,error:null};
-    if (fn === "claim_daily_login_reward") { const today=new Date().toISOString().slice(0,10); if(demoTables.daily_login_rewards.some(x=>x.user_id===userId&&x.reward_date===today)) return {data:0 as T,error:null}; wallet.balance+=1; demoTables.daily_login_rewards.push({id:newId("login"),user_id:userId,reward_date:today,credits:1,created_at:new Date().toISOString()}); return {data:1 as T,error:null}; }
-    if (fn === "complete_credit_purchase") { const ref=String(args.p_tx_ref||""); const purchase=demoTables.credit_purchases.find(x=>x.tx_ref===ref); if(purchase&&purchase.status!=="successful"){purchase.status="successful"; const w=demoTables.credit_wallets.find(x=>x.user_id===purchase.user_id)||{user_id:purchase.user_id,balance:0}; if(!demoTables.credit_wallets.includes(w)) demoTables.credit_wallets.push(w); w.balance+=Number(purchase.credits||0); } return {data:true as T,error:null}; }
-    return { data: null, error: null };
-  }
   try {
     const response = await fetch(`${baseUrl}/rest/v1/rpc/${encodeURIComponent(fn)}`, {
       method: "POST",
-      headers: { apikey: serviceRoleKey!, Authorization: `Bearer ${serviceRoleKey}`, "Content-Type": "application/json", Accept: "application/json" },
+      headers: { ...authHeaders, "Content-Type": "application/json", Accept: "application/json" },
       body: JSON.stringify(args), cache: "no-store",
     });
     const text = await response.text();

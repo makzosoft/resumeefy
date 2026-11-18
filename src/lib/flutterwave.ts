@@ -1,5 +1,4 @@
 import crypto from "node:crypto";
-import { DEMO_MODE } from "./demo";
 
 // Real Flutterwave v3 Standard integration.
 // Docs: https://developer.flutterwave.com/docs/collecting-payments/standard
@@ -28,7 +27,6 @@ export type InitiatePaymentInput = {
 };
 
 export async function initiatePayment(input: InitiatePaymentInput) {
-  if (DEMO_MODE) return { link: `${process.env.APP_URL || "http://localhost:3000"}/shop?demo_payment=success&tx_ref=${encodeURIComponent(input.txRef)}` };
   const appUrl = process.env.APP_URL || "http://localhost:3000";
   const res = await fetch(`${FLW_BASE}/payments`, {
     method: "POST",
@@ -61,7 +59,6 @@ export async function initiatePayment(input: InitiatePaymentInput) {
 }
 
 export async function verifyTransaction(transactionId: string) {
-  if (DEMO_MODE) return { id: Number(transactionId)||1, tx_ref: transactionId, amount: 0, currency: "NGN", status: "successful", customer: { email: "demo@resumeefy.local" } };
   const res = await fetch(`${FLW_BASE}/transactions/${transactionId}/verify`, {
     headers: { Authorization: `Bearer ${secretKey()}` },
   });
@@ -80,7 +77,6 @@ export async function verifyTransaction(transactionId: string) {
 }
 
 export function isValidWebhookSignature(headerHash: string | null): boolean {
-  if (DEMO_MODE) return true;
   const expected = process.env.FLW_WEBHOOK_HASH;
   if (!expected || !headerHash) return false;
   const a = Buffer.from(headerHash);
