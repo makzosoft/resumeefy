@@ -4,6 +4,7 @@ import Link from "next/link";
 import Image from "next/image";
 import { useEffect, useRef, useState } from "react";
 import { api } from "@/lib/client";
+import SiteFooter from "@/components/SiteFooter";
 import "./landing.css";
 
 const ICONS: Record<string, string[]> = {
@@ -18,7 +19,6 @@ const ICONS: Record<string, string[]> = {
   arrow: ["M5 12h14", "M13 6l6 6-6 6"],
   check: ["M5 13l4 4L19 7"],
   mail: ["M4 6h16v12H4z", "M4 7l8 6 8-6"],
-  star: ["M12 2l2.4 7.6L22 12l-7.6 2.4L12 22l-2.4-7.6L2 12l7.6-2.4z"],
 };
 
 function Icon({ name, size = 22, fill = false }: { name: string; size?: number; fill?: boolean }) {
@@ -41,8 +41,6 @@ const tools: Tool[] = [
   { title: "AI Feedback", text: "Turn every attempt into specific improvements you can act on.", href: "/assessment", icon: "spark", tone: "blue" },
   { title: "Readiness Certificate", text: "Finish with a shareable signal that you prepared seriously.", href: "/assessment", icon: "award", tone: "gold" },
 ];
-
-const marquee = ["Resume Analyzer", "Mock Interviews", "Aptitude Tests", "Desktop Simulation", "JD Matching", "AI Feedback", "Resume Builder", "Readiness Certificate"];
 
 const fixes = [
   { before: "Responsible for sales", after: "Grew monthly sales 34% across 3 regions", weak: "Vague", good: "Specific" },
@@ -236,16 +234,6 @@ export default function Home() {
         </div>
       </section>
 
-      <section className="lp-marquee" aria-label="What Resumeefy covers">
-        <div className="lp-track">
-          {[0, 1].map((n) => (
-            <div key={n} style={{ display: "flex" }} aria-hidden={n === 1}>
-              {marquee.map((m) => <span key={`${n}-${m}`}>{m}<Icon name="star" size={16} fill /></span>)}
-            </div>
-          ))}
-        </div>
-      </section>
-
       <section id="tools" className="lp-sec">
         <div className="lp-wrap">
           <div className="lp-head" data-reveal>
@@ -384,42 +372,7 @@ export default function Home() {
         </div>
       </section>
 
-      <footer className="lp-foot">
-        <div className="lp-wrap">
-          <div className="lp-foot-grid">
-            <div className="lp-foot-brand">
-              <div className="lp-logo"><Image src="/brand/resumeefy-mark.png" alt="" width={34} height={27} /> Resumeefy</div>
-              <p>Better CV. Bigger Opportunities.</p>
-            </div>
-            <div>
-              <h4>Tools</h4>
-              <ul>
-                <li><Link href="/assessment">Interview Prep</Link></li>
-                <li><Link href="/resume-builder">Resume Builder</Link></li>
-                <li><Link href="/resume-analyzer">Resume Analyzer</Link></li>
-              </ul>
-            </div>
-            <div>
-              <h4>Learn and earn</h4>
-              <ul>
-                <li><Link href="/courses">Courses</Link></li>
-                <li><Link href="/blog">Blog</Link></li>
-                <li><Link href="/invite">Invite and Earn</Link></li>
-                <li><Link href="/refer">Partner Program</Link></li>
-              </ul>
-            </div>
-            <div>
-              <h4>Account</h4>
-              <ul>
-                <li><Link href="/login">Log in</Link></li>
-                <li><Link href="/signup">Sign up free</Link></li>
-                <li><a href="#community">Community</a></li>
-              </ul>
-            </div>
-          </div>
-          <div className="lp-copy">© 2026 Resumeefy. Built for ambitious job seekers.</div>
-        </div>
-      </footer>
+      <SiteFooter />
     </main>
   );
 }
