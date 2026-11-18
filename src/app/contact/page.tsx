@@ -57,11 +57,15 @@ export default function ContactPage() {
       <div className="lp-wrap ct-body">
         <div className="ct">
           <aside className="ct-side">
+            <a className="ct-link" href="mailto:resumeefy@gmail.com">
+              <span className="ct-ico"><Ico d={["M4 6h16v12H4z", "M4 7l8 6 8-6"]} /></span>
+              <span><b>Email us</b><span className="s">resumeefy@gmail.com</span></span>
+            </a>
             <a className="ct-link" href="/#community">
               <span className="ct-ico"><Ico d={["M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12z"]} /></span>
               <span><b>Join the community</b><span className="s">Tips, openings and quick questions</span></span>
             </a>
-            <Link className="ct-link" href="/refer">
+            <Link className="ct-link" href="/partner">
               <span className="ct-ico"><Ico d={["M9 11a3 3 0 1 0 0-6 3 3 0 0 0 0 6z", "M3.5 19c.5-3 2.7-5 5.5-5s5 2 5.5 5", "M17 8v6M14 11h6"]} /></span>
               <span><b>Become a partner</b><span className="s">Earn 40% by sharing Resumeefy</span></span>
             </Link>

@@ -24,7 +24,7 @@ export default function SiteFooter() {
               <li><Link href="/courses">Courses</Link></li>
               <li><Link href="/blog">Blog</Link></li>
               <li><Link href="/invite">Invite and Earn</Link></li>
-              <li><Link href="/refer">Partner Program</Link></li>
+              <li><Link href="/partner">Partner Program</Link></li>
             </ul>
           </div>
           <div>
