@@ -7,12 +7,14 @@
 
 type DbResult<T> = { data: T | null; error: { message: string } | null; count?: number | null };
 
-type Filter = { column: string; op: "eq" | "gte"; value: string | number | boolean | null };
+type Scalar = string | number | boolean | null;
+type Filter = { column: string; expr: string };
 
 type QueryState = {
   table: string;
-  method: "GET" | "POST" | "PATCH";
+  method: "GET" | "POST" | "PATCH" | "DELETE";
   select?: string;
+  returning?: boolean;
   body?: unknown;
   filters: Filter[];
   order?: { column: string; ascending: boolean };
@@ -35,7 +37,7 @@ const authHeaders: Record<string, string> = serviceRoleKey.startsWith("eyJ")
   ? { apikey: serviceRoleKey, Authorization: `Bearer ${serviceRoleKey}` }
   : { apikey: serviceRoleKey };
 
-function encodeFilterValue(value: Filter["value"]): string {
+function encodeFilterValue(value: Scalar): string {
   if (value === null) return "null";
   if (typeof value === "boolean") return value ? "true" : "false";
   return String(value).replace(/([,()])/g, "\\$1");
@@ -44,28 +46,23 @@ function encodeFilterValue(value: Filter["value"]): string {
 async function execute<T>(state: QueryState): Promise<DbResult<T>> {
   try {
     const params = new URLSearchParams();
-    if (state.method === "GET") params.set("select", state.select || "*");
+    if (state.method === "GET" || (state.returning && state.select)) params.set("select", state.select || "*");
     if (state.order) params.set("order", `${state.order.column}.${state.order.ascending ? "asc" : "desc"}`);
     if (state.limit !== undefined) params.set("limit", String(state.limit));
-    for (const filter of state.filters) params.set(filter.column, `${filter.op}.${encodeFilterValue(filter.value)}`);
+    for (const filter of state.filters) params.set(filter.column, filter.expr);
 
     const headers: Record<string, string> = {
       ...authHeaders,
       Accept: "application/json",
     };
-    if (state.method === "POST") {
-      headers["Content-Type"] = "application/json";
-      headers.Prefer = "return=minimal";
-    } else if (state.method === "PATCH") {
-      headers["Content-Type"] = "application/json";
-      headers.Prefer = "return=minimal";
-    }
+    if (state.method === "POST" || state.method === "PATCH") headers["Content-Type"] = "application/json";
+    if (state.method !== "GET") headers.Prefer = state.returning ? "return=representation" : "return=minimal";
     if (state.countExact) headers.Prefer = `${headers.Prefer ? headers.Prefer + "," : ""}count=exact`;
 
     const response = await fetch(`${baseUrl}/rest/v1/${encodeURIComponent(state.table)}?${params.toString()}`, {
       method: state.method,
       headers,
-      body: state.method === "GET" ? undefined : JSON.stringify(state.body),
+      body: state.method === "GET" || state.method === "DELETE" ? undefined : JSON.stringify(state.body),
       cache: "no-store",
     });
 
@@ -105,12 +102,18 @@ class QueryBuilder<T = unknown> implements PromiseLike<DbResult<T>> {
     this.state.select = columns;
     this.state.countExact = options?.count === "exact";
     this.state.head = options?.head === true;
+    if (this.state.method !== "GET") this.state.returning = true; // insert/update/delete(...).select() returns the rows
     return this;
   }
   insert(body: unknown) { this.state.method = "POST"; this.state.body = body; return this; }
   update(body: unknown) { this.state.method = "PATCH"; this.state.body = body; return this; }
-  eq(column: string, value: string | number | boolean | null) { this.state.filters.push({ column, op: "eq", value }); return this; }
-  gte(column: string, value: string | number | boolean | null) { this.state.filters.push({ column, op: "gte", value }); return this; }
+  delete() { this.state.method = "DELETE"; return this; }
+  eq(column: string, value: Scalar) { this.state.filters.push({ column, expr: `eq.${encodeFilterValue(value)}` }); return this; }
+  neq(column: string, value: Scalar) { this.state.filters.push({ column, expr: `neq.${encodeFilterValue(value)}` }); return this; }
+  gte(column: string, value: Scalar) { this.state.filters.push({ column, expr: `gte.${encodeFilterValue(value)}` }); return this; }
+  is(column: string, value: null | boolean) { this.state.filters.push({ column, expr: `is.${value === null ? "null" : value}` }); return this; }
+  not(column: string, op: "eq" | "neq" | "is" | "gte", value: Scalar) { this.state.filters.push({ column, expr: `not.${op}.${op === "is" && value === null ? "null" : encodeFilterValue(value)}` }); return this; }
+  in(column: string, values: Scalar[]) { this.state.filters.push({ column, expr: `in.(${values.map((v) => `"${String(v).replace(/"/g, '\\"')}"`).join(",")})` }); return this; }
   order(column: string, options?: { ascending?: boolean }) { this.state.order = { column, ascending: options?.ascending !== false }; return this; }
   limit(value: number) { this.state.limit = value; return this; }
   maybeSingle() { this.state.single = true; return this; }
