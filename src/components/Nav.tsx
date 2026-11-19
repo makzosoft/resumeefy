@@ -103,6 +103,7 @@ export default function Nav() {
           <Link href="/courses">Courses</Link>
           <Link href="/blog">Blog</Link>
           {user?.role === "admin" && <Link href="/admin">Admin</Link>}
+          {user?.role === "admin" && <Link href="/admin/partners">Partners</Link>}
         </nav>
 
         <div className="nav-actions">
@@ -164,6 +165,11 @@ export default function Nav() {
           {user?.role === "admin" && (
             <Link href="/admin" onClick={() => setOpen(false)}>
               Admin <span>↗</span>
+            </Link>
+          )}
+          {user?.role === "admin" && (
+            <Link href="/admin/partners" onClick={() => setOpen(false)}>
+              Partners <span>↗</span>
             </Link>
           )}
           {!user && loaded && (

@@ -5,6 +5,10 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { db, newId } from "@/lib/db";
 import { clientKey, rateLimit, tooManyRequests } from "@/lib/rate-limit";
+import { notifyAdmin, siteUrl } from "@/lib/mail";
+import { logPartnerActivity } from "@/lib/partner-activity";
+import { RESOURCES } from "@/lib/partner-resources";
+import { logEvent, sendGroupInvite, type Job } from "@/lib/hiring";
 import { decryptText, encryptText, hashPassword, idFromToken, makeCode, makeToken, maskAccount, maskEmail, minPayout, partnerReady, round2, verifyPassword } from "@/lib/partner";
 
 const err = (message: string, status = 400) => NextResponse.json({ error: message }, { status });
@@ -15,6 +19,7 @@ const signupSchema = z.object({
   email: z.string().trim().toLowerCase().email("Enter a valid email address."),
   phone: z.string().trim().max(25).refine((v) => v.replace(/\D/g, "").length >= 10, "Enter a valid phone number."),
   password: z.string().min(8, "Password must be at least 8 characters.").max(100),
+  hire: z.string().trim().max(60).optional().default(""),
 });
 
 async function authed(req: NextRequest) {
@@ -80,8 +85,11 @@ export async function GET(req: NextRequest) {
   if (req.nextUrl.searchParams.get("op") !== "me") return err("Unknown op.");
   if (p.status === "pending") return NextResponse.json({ pending: true, partner: publicPartner(p) });
   const stale = !p.last_login || Date.now() - new Date(p.last_login).getTime() > 30 * 60000;
-  if (stale) await db.from("affiliates").update({ last_login: new Date().toISOString() }).eq("id", p.id);
-  return NextResponse.json(await dashboard(p), { headers: { "Cache-Control": "no-store" } });
+  if (stale) {
+    await db.from("affiliates").update({ last_login: new Date().toISOString(), inactivity_warned_at: null }).eq("id", p.id);
+    await logPartnerActivity(p.id, "login", "returned to dashboard");
+  }
+  return NextResponse.json({ ...(await dashboard(p)), resources: RESOURCES }, { headers: { "Cache-Control": "no-store" } });
 }
 
 export async function POST(req: NextRequest) {
@@ -97,15 +105,32 @@ export async function POST(req: NextRequest) {
     const d = parsed.data;
     const { data: exists } = await db.from("affiliates").select("id").eq("email", d.email).maybeSingle();
     if (exists) return err("A partner account with this email already exists.");
-    for (let i = 0; i < 6; i++) {
+    // Someone approved through hiring signs up with their personal link and is activated straight away.
+    let hired: { id: string; job_id: string; email: string; status: string } | null = null;
+    if (d.hire) {
+      const { data: ha } = await db.from("hiring_applications").select("id,job_id,email,status").eq("token", d.hire).maybeSingle();
+      if (ha && (ha as any).status === "approved" && String((ha as any).email).toLowerCase() === d.email) hired = ha as any;
+    }
+    let created = false;
+    for (let i = 0; i < 6 && !created; i++) {
       const { error } = await db.from("affiliates").insert({
         id: newId("aff"), email: d.email, full_name: d.name, display_name: d.name, phone: d.phone,
-        password_hash: hashPassword(d.password), code: makeCode(), status: "pending", commission_rate: 0.4,
+        password_hash: hashPassword(d.password), code: makeCode(), status: hired ? "active" : "pending", commission_rate: 0.4,
+        ...(hired ? { approved_at: new Date().toISOString() } : {}),
       });
-      if (!error) return NextResponse.json({ ok: true, message: "Account created. We will review and approve it shortly." });
+      if (!error) { created = true; break; }
       if (!/duplicate|unique/i.test(error.message) || /email/i.test(error.message)) return err("Could not create account.", 500);
     }
-    return err("Could not create account. Try again.", 500);
+    if (!created) return err("Could not create account. Try again.", 500);
+    if (hired) {
+      await db.from("hiring_applications").update({ status: "joined", joined_at: new Date().toISOString() }).eq("id", hired.id);
+      await logEvent(hired.job_id, hired.id, "joined", `${d.email} signed up as a partner and is active`);
+      const { data: hj } = await db.from("hiring_jobs").select("*").eq("id", hired.job_id).maybeSingle();
+      if (hj) await sendGroupInvite(hj as Job, { name: d.name, email: d.email });
+      return NextResponse.json({ ok: true, message: "Your partner account is ready." });
+    }
+    await notifyAdmin("New partner waiting for your approval", { heading: "New partner to approve", paragraphs: ["A new partner has signed up and is waiting for approval."], rows: [["Name", d.name], ["Email", d.email], ["Phone", d.phone]] });
+    return NextResponse.json({ ok: true, message: "Account created. We will review and approve it shortly." });
   }
 
   if (op === "login") {
@@ -115,12 +140,18 @@ export async function POST(req: NextRequest) {
     const { data: p } = await db.from("affiliates").select("*").eq("email", email).maybeSingle();
     if (!p || !verifyPassword(b.password, (p as any).password_hash)) return err("Incorrect email or password.", 401);
     if ((p as any).status === "suspended") return err("This account has been suspended. Contact Resumeefy.", 403);
-    await db.from("affiliates").update({ last_login: new Date().toISOString() }).eq("id", (p as any).id);
+    await db.from("affiliates").update({ last_login: new Date().toISOString(), last_seen: new Date().toISOString(), inactivity_warned_at: null }).eq("id", (p as any).id);
+    await logPartnerActivity((p as any).id, "login");
     return NextResponse.json({ token: makeToken((p as any).id) });
   }
 
   const p = await authed(req);
   if (!p) return err("Session expired. Please sign in again.", 401);
+
+  if (op === "track") {
+    await logPartnerActivity(p.id, String(b.kind || ""), String(b.detail || ""));
+    return NextResponse.json({ ok: true });
+  }
 
   if (op === "bank") {
     const bankName = String(b.bankName || "").trim().slice(0, 60);
@@ -151,6 +182,7 @@ export async function POST(req: NextRequest) {
     if (total < min) return err(`Minimum payout is ${currency} ${min.toLocaleString()}. You have ${currency} ${total.toLocaleString()} available.`);
     const { error } = await db.from("affiliate_payout_requests").insert({ id: newId("payout"), affiliate_id: p.id, amount: total, currency, status: "requested" });
     if (error) return err("Could not create the request.", 500);
+    await notifyAdmin("Partner payout requested", { heading: "Payout request", paragraphs: ["A partner has asked to be paid out."], rows: [["Partner", p.full_name || p.display_name], ["Email", p.email], ["Amount", `${currency} ${total.toLocaleString()}`]], cta: { label: "Open admin", url: `${siteUrl()}/admin` } });
     return NextResponse.json({ ok: true, amount: total });
   }
 

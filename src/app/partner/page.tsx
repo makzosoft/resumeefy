@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import SiteFooter from "@/components/SiteFooter";
+import Resources, { type Resource } from "./Resources";
 import "../landing.css";
 import "./partner.css";
 
@@ -17,6 +18,7 @@ type Dash = {
   referrals?: { name: string; email: string; joined: string; status: string; earned: number }[];
   commissions?: { id: string; amount: number; currency: string; status: string; at: string }[];
   payouts?: { id: string; amount: number; currency: string; status: string; created_at: string }[];
+  resources?: Resource[];
 };
 
 async function call<T>(op: string, token: string | null, body?: unknown, method = body ? "POST" : "GET"): Promise<T> {
@@ -32,7 +34,7 @@ async function call<T>(op: string, token: string | null, body?: unknown, method 
 
 const fmt = (n: number, c: string) => `${c} ${Number(n).toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
 
-function Auth({ onToken }: { onToken: (t: string) => void }) {
+function Auth({ onToken, hire }: { onToken: (t: string) => void; hire: string }) {
   const [mode, setMode] = useState<"signup" | "login">("signup");
   const [f, setF] = useState({ name: "", email: "", phone: "", password: "" });
   const [busy, setBusy] = useState(false);
@@ -44,8 +46,8 @@ function Auth({ onToken }: { onToken: (t: string) => void }) {
     setBusy(true); setMsg(null);
     try {
       if (mode === "signup") {
-        const r = await call<{ message: string }>("signup", null, f);
-        setMsg({ ok: true, text: r.message + " You can sign in once you are approved." });
+        const r = await call<{ message: string }>("signup", null, { ...f, hire });
+        setMsg({ ok: true, text: r.message + (hire ? " You can sign in now." : " You can sign in once you are approved.") });
         setMode("login");
       } else {
         const r = await call<{ token: string }>("login", null, { email: f.email, password: f.password });
@@ -67,7 +69,7 @@ function Auth({ onToken }: { onToken: (t: string) => void }) {
       <div className="pt-field"><label htmlFor="pw">Password</label><input id="pw" type="password" className="pt-in" value={f.password} onChange={set("password")} autoComplete={mode === "signup" ? "new-password" : "current-password"} minLength={8} required /></div>
       {msg && <div className={`pt-msg ${msg.ok ? "ok" : "err"}`} role="status">{msg.text}</div>}
       <button className="pt-btn" disabled={busy}>{busy ? "Please wait..." : mode === "signup" ? "Create partner account" : "Log in"}</button>
-      {mode === "signup" && <p className="pt-note">New accounts are reviewed by the Resumeefy team before your link goes live.</p>}
+      {mode === "signup" && <p className="pt-note">{hire ? "You were approved through hiring. Use the same email you applied with and your account activates straight away." : "New accounts are reviewed by the Resumeefy team before your link goes live."}</p>}
     </form>
   );
 }
@@ -79,6 +81,7 @@ function Dashboard({ token, data, reload, logout }: { token: string; data: Dash;
   const [bank, setBank] = useState({ bankName: "", accountName: "", accountNumber: "" });
   const [pw, setPw] = useState({ current: "", next: "" });
   const link = typeof window === "undefined" ? "" : `${window.location.origin}/?ref=${p.code}`;
+  const track = (kind: string, detail: string) => { call("track", token, { kind, detail }).catch(() => {}); };
 
   async function act(op: string, body: unknown, after?: () => void) {
     setNote(null);
@@ -108,7 +111,7 @@ function Dashboard({ token, data, reload, logout }: { token: string; data: Dash;
       <div className="pt-link">
         <b>Your referral link</b>
         <code>{link}</code>
-        <button className="pt-btn gold" onClick={() => { navigator.clipboard?.writeText(link); setCopied(true); setTimeout(() => setCopied(false), 1800); }}>{copied ? "Copied" : "Copy link"}</button>
+        <button className="pt-btn gold" onClick={() => { navigator.clipboard?.writeText(link); setCopied(true); setTimeout(() => setCopied(false), 1800); track("copy_link", "referral link"); }}>{copied ? "Copied" : "Copy link"}</button>
       </div>
 
       <div className="pt-kpis">
@@ -155,6 +158,8 @@ function Dashboard({ token, data, reload, logout }: { token: string; data: Dash;
         </section>
       </div>
 
+      {data.resources && <Resources items={data.resources} link={link} track={track} />}
+
       <div className="pt-two">
         <form className="pt-panel" onSubmit={(e) => { e.preventDefault(); act("bank", bank, () => setBank({ bankName: "", accountName: "", accountNumber: "" })); }}>
           <h2>Bank details</h2>
@@ -179,6 +184,7 @@ export default function PartnerPage() {
   const [token, setToken] = useState<string | null>(null);
   const [data, setData] = useState<Dash | null>(null);
   const [ready, setReady] = useState(false);
+  const [hire, setHire] = useState("");
 
   const logout = useCallback(() => { localStorage.removeItem(KEY); setToken(null); setData(null); }, []);
   const load = useCallback(async (t: string) => {
@@ -187,6 +193,7 @@ export default function PartnerPage() {
   }, [logout]);
 
   useEffect(() => {
+    setHire(new URLSearchParams(window.location.search).get("hire") || "");
     const t = localStorage.getItem(KEY);
     if (t) { setToken(t); load(t); }
     setReady(true);
@@ -210,7 +217,7 @@ export default function PartnerPage() {
                 <li><b>3</b><span>Earn commission on credit purchases and cash out to your bank.</span></li>
               </ol>
             </div>
-            {ready && !(token && !data) ? <Auth onToken={signedIn} /> : <div className="pt-card"><p className="pt-note">Loading your dashboard...</p></div>}
+            {ready && !(token && !data) ? <Auth onToken={signedIn} hire={hire} /> : <div className="pt-card"><p className="pt-note">Loading your dashboard...</p></div>}
           </div>
         </section>
       )}
