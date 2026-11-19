@@ -69,13 +69,6 @@
 .lp-chip.one{top:-18px;right:-6px}.lp-chip.two{bottom:46px;left:-14px;background:#fff;animation-delay:-1.4s}
 @media(max-width:600px){.lp-chip.one{right:-2px}.lp-chip.two{left:-4px}.lp-score{min-width:88px}}
 
-/* Marquee */
-.lp-marquee{background:var(--lp-ink);color:#fff;overflow:hidden;border-block:1px solid rgba(255,255,255,.1)}
-.lp-track{display:flex;width:max-content;animation:lpMarq 28s linear infinite}
-.lp-marquee:hover .lp-track{animation-play-state:paused}
-.lp-track span{display:flex;align-items:center;gap:28px;padding:18px 0 18px 28px;font-weight:800;font-size:clamp(.95rem,2vw,1.15rem);white-space:nowrap}
-.lp-track svg{color:var(--lp-gold)}
-
 /* Sections */
 .lp-sec{padding:clamp(64px,10vw,120px) 0}
 .lp-head{display:grid;gap:14px 40px;margin-bottom:clamp(28px,5vw,56px)}
@@ -202,7 +195,6 @@
 @keyframes lpRise{to{transform:none}}
 @keyframes lpFade{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:none}}
 @keyframes lpBob{to{transform:translateY(-9px)}}
-@keyframes lpMarq{to{transform:translateX(-50%)}}
 @keyframes lpDot{0%,60%,100%{transform:translateY(0);opacity:.4}30%{transform:translateY(-4px);opacity:1}}
 @keyframes lpPulse{to{transform:translate(-50%,-50%) scale(1.15)}}
-@media(prefers-reduced-motion:reduce){.lp *,.lp *::before,.lp *::after{animation:none!important;transition-duration:.01ms!important}.lp-hero h1 .ln>span,.lp-sub,.lp-actions,.lp-points,.lp-stage{opacity:1!important;transform:none!important}.lp-track{animation:none}}
+@media(prefers-reduced-motion:reduce){.lp *,.lp *::before,.lp *::after{animation:none!important;transition-duration:.01ms!important}.lp-hero h1 .ln>span,.lp-sub,.lp-actions,.lp-points,.lp-stage{opacity:1!important;transform:none!important}}
