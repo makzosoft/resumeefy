@@ -4,7 +4,7 @@ export const dynamic = "force-dynamic";
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { db, newId } from "@/lib/db";
-import { notifyAdmin } from "@/lib/mail";
+import { notifyAdmin, siteUrl } from "@/lib/mail";
 import { clientKey, rateLimit, tooManyRequests } from "@/lib/rate-limit";
 
 const CONTACT_TOPICS = ["Resume help", "Payments & credits", "Courses", "Partners", "Something else"] as const;
@@ -47,6 +47,6 @@ export async function POST(req: NextRequest) {
     console.error("[contact]", error.message);
     return NextResponse.json({ error: "Could not send your message. Please try again." }, { status: 500 });
   }
-  await notifyAdmin("New contact message", { heading: "New message from the Contact page", rows: [["Topic", d.topic], ["Name", d.name || "-"], ["Reply to", d.reply || "-"]], paragraphs: [d.message.slice(0, 600)], cta: { label: "Open the messages table", url: "https://supabase.com/dashboard/project/pclrswztvcmegvszxitj/editor" } });
+  await notifyAdmin("New contact message", { heading: "New message from the Contact page", rows: [["Topic", d.topic], ["Name", d.name || "-"], ["Reply to", d.reply || "-"]], paragraphs: [d.message.slice(0, 600)], cta: { label: "Open messages in admin", url: `${siteUrl()}/admin?tab=messages` } });
   return NextResponse.json({ ok: true });
 }

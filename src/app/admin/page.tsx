@@ -1,149 +1,87 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { api, CurrentUser } from "@/lib/client";
+import Overview from "@/components/admin/Overview";
+import Messages from "@/components/admin/Messages";
+import Users from "@/components/admin/Users";
+import Legacy from "@/components/admin/Legacy";
 
-type Stats = {
-  totalUsers: number;
-  totalLeads: number;
-  totalAssessments: number;
-  avgScore: number;
-  totalRevenue: number;
-  successfulPayments: number;
-  eventCounts: { name: string; count: number }[];
-  recentEvents: { name: string; created_at: string; email: string | null; meta: Record<string, unknown> }[];
-  dailySignups: { day: string; count: number }[];
-  affiliates: any[];
-  affiliateCommissions: any[];
-  affiliatePayouts: any[];
-  blogProgress: any[];
-  referralLeads: any[];
-  revenueByCurrency: Record<string, number>;
-  userReferrals: any[];
-  dailyLoginRewards: any[];
-};
+type Alerts = { messages: number; partners: number; payouts: number; hiring: number };
+const TABS = [
+  { id: "overview", label: "Overview" },
+  { id: "messages", label: "Messages" },
+  { id: "users", label: "Users" },
+  { id: "partners", label: "Partners" },
+  { id: "blog", label: "Blog" },
+  { id: "growth", label: "Growth" },
+];
 
 export default function AdminPage() {
   const [user, setUser] = useState<CurrentUser>(null);
-  const [authLoaded, setAuthLoaded] = useState(false);
-  const [stats, setStats] = useState<Stats | null>(null);
-  const [error, setError] = useState("");
+  const [loaded, setLoaded] = useState(false);
+  const [tab, setTab] = useState("overview");
+  const [alerts, setAlerts] = useState<Alerts>({ messages: 0, partners: 0, payouts: 0, hiring: 0 });
+  const [bell, setBell] = useState(false);
 
-  useEffect(() => {
-    api<{ user: CurrentUser }>("/api/auth")
-      .then((r) => setUser(r.user))
-      .finally(() => setAuthLoaded(true));
+  const choose = useCallback((id: string) => {
+    setTab(id); setBell(false);
+    try { window.history.replaceState(null, "", id === "overview" ? "/admin" : `/admin?tab=${id}`); } catch { /* ignore */ }
   }, []);
+  const refresh = useCallback(() => { api<{ alerts: Alerts }>("/api/admin/dashboard?light=1").then((r) => setAlerts(r.alerts)).catch(() => {}); }, []);
 
   useEffect(() => {
-    if (!authLoaded || !user || user.role !== "admin") return;
-    api<Stats>("/api/admin")
-      .then(setStats)
-      .catch((e) => setError(e.message));
-  }, [authLoaded, user]);
+    const t = new URLSearchParams(window.location.search).get("tab");
+    if (t && TABS.some((x) => x.id === t)) setTab(t);
+    api<{ user: CurrentUser }>("/api/auth").then((r) => setUser(r.user)).finally(() => setLoaded(true));
+  }, []);
+  useEffect(() => {
+    if (user?.role !== "admin") return;
+    refresh();
+    const t = setInterval(refresh, 60000);
+    return () => clearInterval(t);
+  }, [user, refresh]);
 
-  if (!authLoaded) {
-    return <div className="max-w-2xl mx-auto px-6 py-20 text-center">Checking your session…</div>;
-  }
-  if (!user) {
-    return (
-      <div className="max-w-2xl mx-auto px-6 py-20 text-center">
-        <p>Sign in with an admin account to view this page.</p>
-        <a href="/login?next=/admin" className="btn btn-primary mt-5 inline-flex">
-          Log in
-        </a>
-      </div>
-    );
-  }
-  if (user.role !== "admin") {
-    return <div className="max-w-2xl mx-auto px-6 py-20 text-center">This page is for admins only.</div>;
-  }
-  if (error) return <div className="max-w-2xl mx-auto px-6 py-20 text-center text-[var(--coral)]">{error}</div>;
-  if (!stats) return <div className="max-w-2xl mx-auto px-6 py-20 text-center">Loading real, cross-user data…</div>;
+  if (!loaded) return <div className="max-w-2xl mx-auto px-6 py-20 text-center">Checking your session…</div>;
+  if (!user) return (
+    <div className="max-w-2xl mx-auto px-6 py-20 text-center"><p>Sign in with an admin account to view this page.</p><a href="/login?next=/admin" className="btn btn-primary mt-5 inline-flex">Log in</a></div>
+  );
+  if (user.role !== "admin") return <div className="max-w-2xl mx-auto px-6 py-20 text-center">This page is for admins only.</div>;
+
+  const badge = (id: string) => (id === "messages" ? alerts.messages : id === "partners" ? alerts.partners + alerts.payouts + alerts.hiring : 0);
+  const items: { text: string; tab: string }[] = [];
+  if (alerts.messages) items.push({ text: `${alerts.messages} new contact message${alerts.messages === 1 ? "" : "s"}`, tab: "messages" });
+  if (alerts.partners) items.push({ text: `${alerts.partners} partner${alerts.partners === 1 ? "" : "s"} waiting for approval`, tab: "partners" });
+  if (alerts.payouts) items.push({ text: `${alerts.payouts} payout request${alerts.payouts === 1 ? "" : "s"}`, tab: "partners" });
+  if (alerts.hiring) items.push({ text: `${alerts.hiring} hiring application${alerts.hiring === 1 ? "" : "s"} to review`, tab: "partners" });
+  const total = items.length ? alerts.messages + alerts.partners + alerts.payouts + alerts.hiring : 0;
 
   return (
-    <div className="max-w-5xl mx-auto px-6 py-14">
-      <h1 className="font-display text-3xl font-semibold">Admin Dashboard</h1>
-      <p className="text-[var(--ink-soft)] mt-2">Real data, aggregated across every user in the database.</p>
-
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-8">
-        {[
-          ["Total users", stats.totalUsers],
-          ["Leads captured", stats.totalLeads],
-          ["Assessments taken", stats.totalAssessments],
-          ["Avg. score", stats.avgScore],
-          ["Successful credit purchases", stats.successfulPayments],
-          ["Credit revenue", Object.entries(stats.revenueByCurrency).map(([c,v])=>`${c} ${Number(v).toLocaleString()}`).join(" · ") || "0"],
-          ["Active affiliates", stats.affiliates.filter((a:any)=>a.status === "active").length],
-          ["Affiliate commissions", stats.affiliateCommissions.length],
-          ["Friend referrals completed", stats.userReferrals.filter((r:any)=>r.status === "completed").length],
-          ["Daily rewards issued", stats.dailyLoginRewards.length],
-        ].map(([label, value]) => (
-          <div key={label as string} className="card p-5">
-            <div className="text-xs font-bold text-[var(--ink-soft)]">{label}</div>
-            <div className="font-display text-2xl font-semibold mt-1">{value}</div>
-          </div>
-        ))}
-      </div>
-
-
-      <div className="grid lg:grid-cols-2 gap-6 mt-8">
-        <div className="card p-6">
-          <h2 className="font-bold text-sm mb-3">Affiliate performance</h2>
-          <div className="space-y-3">{stats.affiliates.slice(0,10).map((a:any)=><div key={a.id} className="flex items-center justify-between border-b border-[var(--line)] pb-3"><div><b>{a.display_name}</b><div className="text-xs text-[var(--ink-soft)]">{a.code} · {a.status}</div></div><div className="text-right text-xs"><b>{a.total_sales}</b> sales<br/><span>{a.total_clicks} clicks · {a.total_signups} signups</span><br/><span className="text-[var(--ink-soft)]">{a.payout_account_number ? `Acct ••••${String(a.payout_account_number).slice(-4)}` : "No payout account"}</span><br/><button className="text-[var(--blue)] font-bold mt-1" onClick={async()=>{await api("/api/admin",{method:"POST",body:JSON.stringify({action:"affiliate_status",affiliateId:a.id,status:a.status === "active" ? "suspended" : "active"})});setStats(await api<Stats>("/api/admin"));}}>{a.status === "active" ? "Suspend" : "Activate"}</button></div></div>)}</div>
-        </div>
-        <div className="card p-6">
-          <h2 className="font-bold text-sm mb-3">Payout requests</h2>
-          <div className="space-y-3">{stats.affiliatePayouts.slice(0,10).map((p:any)=><div key={p.id} className="flex items-center justify-between border-b border-[var(--line)] pb-3 text-sm"><div><b>{p.affiliates?.display_name || p.affiliates?.code || "Affiliate"}</b><div className="text-xs text-[var(--ink-soft)]">{p.currency} {Number(p.amount).toLocaleString()} · {p.status}</div></div><button className="text-[var(--blue)] font-bold text-xs mr-3" onClick={async()=>{const r:any=await api("/api/admin",{method:"POST",body:JSON.stringify({action:"partner_bank",code:p.affiliates?.code})});alert(r.accountNumber?`${r.bankName}\n${r.accountName}\n${r.accountNumber}`:"No bank details saved yet.");}}>Bank details</button>{p.status !== "paid" && <button className="btn btn-primary !px-3 !py-2 text-xs" onClick={async()=>{await api("/api/admin",{method:"POST",body:JSON.stringify({action:"affiliate_payout_paid",payoutId:p.id})});const next=await api<Stats>("/api/admin");setStats(next);}}>Mark paid</button>}</div>)}</div>
+    <div className="max-w-5xl mx-auto px-4 sm:px-6 py-10">
+      <div className="flex items-start justify-between gap-4">
+        <div><h1 className="font-display text-3xl font-semibold">Admin</h1><p className="text-[var(--ink-soft)] mt-1 text-sm">Signed in as {user.name}</p></div>
+        <div className="relative">
+          <button className="card px-4 py-3 text-lg relative" onClick={() => setBell((b) => !b)} aria-label="Things needing attention">🔔{total > 0 && <i className="absolute -top-2 -right-2 not-italic text-[11px] font-bold bg-[var(--coral)] text-white rounded-full min-w-5 h-5 grid place-items-center px-1">{total > 9 ? "9+" : total}</i>}</button>
+          {bell && (<>
+            <div className="fixed inset-0 z-40" onClick={() => setBell(false)} aria-hidden="true" />
+            <div className="card p-4 absolute right-0 mt-2 w-72 z-50 space-y-2"><b className="text-sm">Needs your attention</b>
+              {items.length ? items.map((i, k) => <button key={k} className="block w-full text-left text-sm py-2 border-t border-[var(--line)]" onClick={() => choose(i.tab)}>{i.text}</button>) : <p className="text-sm text-[var(--ink-soft)]">All clear.</p>}</div></>)}
         </div>
       </div>
 
-      <div className="card p-6 mt-8">
-        <div className="flex items-end justify-between gap-4"><div><h2 className="font-bold text-sm">Referred email signups</h2><p className="text-xs text-[var(--ink-soft)] mt-1">Email referrals captured from affiliate links, with conversion and attribution expiry.</p></div><b>{stats.referralLeads.length}</b></div>
-        <div className="overflow-x-auto mt-4"><table className="w-full text-sm"><thead><tr className="text-left text-xs text-[var(--ink-soft)]"><th className="py-2 pr-4">Email</th><th className="py-2">Affiliate</th><th className="py-2">Converted</th><th className="py-2">Expires</th></tr></thead><tbody>{stats.referralLeads.slice(0,25).map((l:any)=><tr key={`${l.email}-${l.affiliate_code}`} className="border-t border-[var(--line)]"><td className="py-3 pr-4">{l.email}</td><td className="py-3">{l.affiliate_code}</td><td className="py-3">{l.converted_at ? "Yes" : "No"}</td><td className="py-3">{new Date(l.expires_at).toLocaleDateString()}</td></tr>)}</tbody></table></div>
+      <div className="flex gap-2 mt-6 overflow-x-auto pb-1" role="tablist">
+        {TABS.map((t) => { const n = badge(t.id); return (
+          <button key={t.id} role="tab" aria-selected={tab === t.id} onClick={() => choose(t.id)} className={`relative whitespace-nowrap px-4 py-2.5 rounded-full text-sm font-bold border ${tab === t.id ? "bg-[var(--blue)] text-white border-[var(--blue)]" : "border-[var(--line)] bg-white"}`}>
+            {t.label}{n > 0 && <i className="not-italic ml-2 text-[11px] bg-[var(--coral)] text-white rounded-full px-1.5 py-0.5">{n > 9 ? "9+" : n}</i>}
+          </button>); })}
       </div>
 
-      <div className="card p-6 mt-8">
-        <div className="flex items-end justify-between gap-4"><div><h2 className="font-bold text-sm">Blog progress</h2><p className="text-xs text-[var(--ink-soft)] mt-1">On site engagement by article. Search Console data can be added later for impressions, clicks and position.</p></div></div>
-        <div className="overflow-x-auto mt-4"><table className="w-full text-sm"><thead><tr className="text-left text-xs text-[var(--ink-soft)]"><th className="py-2 pr-4">Article</th><th className="py-2">Keyword</th><th className="py-2">Intent</th><th className="py-2">Promotion</th><th className="py-2">Words</th><th className="py-2">Reads</th><th className="py-2">Shares</th><th className="py-2">CTAs</th></tr></thead><tbody>{stats.blogProgress.slice(0,20).map((p:any)=><tr key={p.id} className="border-t border-[var(--line)]"><td className="py-3 pr-4"><div className="font-semibold">{p.title}</div><div className="text-xs text-[var(--ink-soft)]">{p.topic || "Career"}</div></td><td className="py-3">{p.primary_keyword || "—"}</td><td className="py-3">{p.search_intent || "—"}</td><td className="py-3">{p.marketing?.recommendedService || "none"}</td><td className="py-3">{p.word_count}</td><td className="py-3">{p.views}</td><td className="py-3">{p.shares}</td><td className="py-3">{p.ctas}</td></tr>)}</tbody></table></div>
-      </div>
-
-
-      <div className="grid lg:grid-cols-2 gap-6 mt-8">
-        <div className="card p-6">
-          <h2 className="font-bold text-sm mb-2">User invite rewards</h2>
-          <p className="text-xs text-[var(--ink-soft)]">Small growth incentives are tracked separately from the paid affiliate programme.</p>
-          <div className="mt-4 space-y-2">{stats.userReferrals.slice(0,10).map((r:any)=><div key={r.id} className="flex justify-between text-sm border-b border-[var(--line)] py-2"><span>{r.invitee_email}</span><span className="font-bold">{r.status} · +{r.inviter_reward}</span></div>)}</div>
-        </div>
-        <div className="card p-6">
-          <h2 className="font-bold text-sm mb-2">Daily login rewards</h2>
-          <p className="text-xs text-[var(--ink-soft)]">One tiny credit per account per calendar day. These rewards are not intended to replace credit purchases.</p>
-          <div className="mt-4 text-3xl font-display font-semibold">{stats.dailyLoginRewards.length}</div>
-          <p className="text-xs text-[var(--ink-soft)] mt-1">reward claims recorded</p>
-        </div>
-      </div>
-
-      <div className="grid md:grid-cols-2 gap-6 mt-8">
-        <div className="card p-6">
-          <h2 className="font-bold text-sm mb-3">Events by type</h2>
-          <div className="space-y-2">
-            {stats.eventCounts.map((e) => (
-              <div key={e.name} className="flex justify-between text-sm border-b border-[var(--line)] py-2">
-                <span>{e.name}</span>
-                <span className="font-bold">{e.count}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-        <div className="card p-6">
-          <h2 className="font-bold text-sm mb-3">Recent activity</h2>
-          <div className="space-y-2 max-h-80 overflow-y-auto">
-            {stats.recentEvents.map((e, i) => (
-              <div key={i} className="text-xs text-[var(--ink-soft)] border-b border-[var(--line)] py-2">
-                {new Date(e.created_at).toLocaleString()} · {e.name} {e.email ? `· ${e.email}` : ""}
-              </div>
-            ))}
-          </div>
-        </div>
+      <div className="mt-6">
+        {tab === "overview" && <Overview />}
+        {tab === "messages" && <Messages onChange={refresh} />}
+        {tab === "users" && <Users />}
+        {tab === "partners" && <Legacy part="partners" />}
+        {tab === "blog" && <Legacy part="blog" />}
+        {tab === "growth" && <Legacy part="growth" />}
       </div>
     </div>
   );
