@@ -1,4 +1,5 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
+import { baseUrl } from "@/lib/site";
 import "./globals.css";
 import Nav from "@/components/Nav";
 import ReferralCapture from "@/components/ReferralCapture";
@@ -12,9 +13,7 @@ import { SpeedInsights } from "@vercel/speed-insights/next";
 import { Analytics } from "@vercel/analytics/next";
 
 export const metadata: Metadata = {
-  metadataBase: new URL(
-    process.env.NEXT_PUBLIC_SITE_URL || process.env.APP_URL || "https://resumeefy.com"
-  ),
+  metadataBase: new URL(baseUrl()),
   title: { default: "Resumeefy | Better CV. Bigger Opportunities.", template: "%s | Resumeefy" },
   description:
     "Build a stronger resume, practise interviews, test career readiness and prepare for better opportunities with Resumeefy.",
@@ -33,17 +32,19 @@ export const metadata: Metadata = {
   openGraph: {
     type: "website",
     siteName: "Resumeefy",
+    locale: "en_NG",
+    url: "/",
     title: "Resumeefy | Better CV. Bigger Opportunities.",
-    description: "Prepare smarter for the next opportunity with Resumeefy.",
-    images: ["/brand/resumeefy-wordmark.png"],
+    description: "Score your resume, practise interviews and prepare for better opportunities.",
   },
   twitter: {
     card: "summary_large_image",
     title: "Resumeefy | Better CV. Bigger Opportunities.",
     description: "Resume, interview and career readiness tools for ambitious job seekers.",
   },
-  icons: { icon: "/brand/resumeefy-mark.png" },
 };
+
+export const viewport: Viewport = { themeColor: "#0A2FCC" };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
@@ -70,15 +71,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               "@context": "https://schema.org",
               "@type": "Organization",
               name: "Resumeefy",
-              url:
-                process.env.NEXT_PUBLIC_SITE_URL ||
-                process.env.APP_URL ||
-                "https://resumeefy.com",
-              logo: `${
-                process.env.NEXT_PUBLIC_SITE_URL ||
-                process.env.APP_URL ||
-                "https://resumeefy.com"
-              }/brand/resumeefy-mark.png`,
+              url: baseUrl(),
+              logo: `${baseUrl()}/brand/resumeefy-mark.png`,
             }),
           }}
         />

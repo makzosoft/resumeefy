@@ -1,8 +1,8 @@
 // Best effort email through Gmail (or any SMTP host) using nodemailer. Never throws.
 // Turn it on with SMTP_USER (e.g. resumeefy@gmail.com) and SMTP_PASS (a Google App Password, not the normal password).
 import nodemailer, { type Transporter } from "nodemailer";
-
-export const siteUrl = () => (process.env.NEXT_PUBLIC_SITE_URL || process.env.APP_URL || "").replace(/\/$/, "");
+import { baseUrl } from "@/lib/site";
+export const siteUrl = baseUrl;
 const esc = (s: string) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c] as string));
 const EMAIL_RE = /^[^\s@<>"]+@[^\s@<>"]+\.[^\s@<>"]+$/;
 
