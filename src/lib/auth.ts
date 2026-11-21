@@ -38,6 +38,51 @@ async function authRequest(path: string, init: RequestInit = {}) {
   });
 }
 
+const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+// Admin calls use the service key. Newer sb_secret keys go in the apikey header only.
+async function adminRequest(path: string, init: RequestInit = {}) {
+  if (!SERVICE_KEY) return null;
+  return fetch(`${SUPABASE_URL}/auth/v1/${path}`, {
+    ...init,
+    cache: "no-store",
+    headers: {
+      apikey: SERVICE_KEY,
+      ...(SERVICE_KEY.startsWith("eyJ") ? { Authorization: `Bearer ${SERVICE_KEY}` } : {}),
+      "Content-Type": "application/json",
+      ...(init.headers || {}),
+    },
+  });
+}
+
+// Accounts are created already confirmed so people can sign in straight away instead of waiting for an email.
+async function createConfirmedUser(email: string, password: string, name: string): Promise<"created" | "exists" | "failed"> {
+  const r = await adminRequest("admin/users", { method: "POST", body: JSON.stringify({ email, password, email_confirm: true, user_metadata: { name } }) });
+  if (!r) return "failed";
+  if (r.ok) return "created";
+  const body = (await r.json().catch(() => ({}))) as SupabaseAuthResponse;
+  const text = `${body.error_code || ""} ${body.msg || ""} ${body.message || ""}`.toLowerCase();
+  if (r.status === 422 || text.includes("exists") || text.includes("already")) return "exists";
+  console.error("[signUp] admin create failed:", r.status, "error_code:", body.error_code || body.code || "n/a");
+  return "failed";
+}
+
+// Unsticks accounts that were created before confirmation was switched off.
+async function confirmExistingUser(email: string): Promise<boolean> {
+  for (let page = 1; page <= 5; page++) {
+    const r = await adminRequest(`admin/users?page=${page}&per_page=200`);
+    if (!r || !r.ok) return false;
+    const body = (await r.json().catch(() => ({}))) as { users?: { id: string; email?: string }[] };
+    const found = (body.users || []).find((u) => String(u.email || "").toLowerCase() === email.toLowerCase());
+    if (found) {
+      const put = await adminRequest(`admin/users/${found.id}`, { method: "PUT", body: JSON.stringify({ email_confirm: true }) });
+      return !!put && put.ok;
+    }
+    if (!body.users || body.users.length < 200) break;
+  }
+  return false;
+}
+
 function extractErrorMessage(body: SupabaseAuthResponse, status: number, fallback: string) {
   return (
     body.error_description ||
@@ -59,7 +104,7 @@ function authError(message: string, code?: string) {
   return Object.assign(new Error(message), code ? { code } : {});
 }
 
-export async function signIn(email: string, password: string) {
+export async function signIn(email: string, password: string, retry = true): Promise<SupabaseUser> {
   const response = await authRequest("token?grant_type=password", {
     method: "POST",
     body: JSON.stringify({ email, password }),
@@ -69,6 +114,7 @@ export async function signIn(email: string, password: string) {
   if (!response.ok || !body.access_token || !body.refresh_token || !body.user) {
     console.error("[signIn] supabase status:", response.status, "error_code:", body.error_code || body.code || "n/a");
     if (isEmailNotConfirmed(body)) {
+      if (retry && (await confirmExistingUser(email))) return signIn(email, password, false);
       throw authError(
         "Please confirm your email before signing in. Check your inbox (and spam folder) for the confirmation link we sent when you signed up.",
         "EMAIL_NOT_CONFIRMED"
@@ -81,6 +127,13 @@ export async function signIn(email: string, password: string) {
 }
 
 export async function signUp(email: string, password: string, name: string) {
+  const created = await createConfirmedUser(email, password, name);
+  if (created === "created") {
+    const user = await signIn(email, password, false);
+    return { user, hasSession: true };
+  }
+  if (created === "exists") throw authError("An account with this email already exists. Please log in instead.", "ALREADY_REGISTERED");
+
   // Explicit redirect target for the confirmation email — without this,
   // Supabase falls back to whatever Site URL is set in the dashboard, which
   // is easy to leave stale or unset and is the most common cause of
