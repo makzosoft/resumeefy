@@ -70,7 +70,7 @@ export default function AdminPage() {
 
       <div className="flex gap-2 mt-6 overflow-x-auto pb-1" role="tablist">
         {TABS.map((t) => { const n = badge(t.id); return (
-          <button key={t.id} role="tab" aria-selected={tab === t.id} onClick={() => choose(t.id)} className={`relative whitespace-nowrap px-4 py-2.5 rounded-full text-sm font-bold border ${tab === t.id ? "bg-[var(--blue)] text-white border-[var(--blue)]" : "border-[var(--line)] bg-white"}`}>
+          <button key={t.id} role="tab" aria-selected={tab === t.id} onClick={() => choose(t.id)} className={`relative whitespace-nowrap px-4 py-2.5 rounded-full text-sm font-bold border ${tab === t.id ? "bg-[var(--blue)] text-white border-[var(--blue)]" : "border-[var(--line)]"}`}>
             {t.label}{n > 0 && <i className="not-italic ml-2 text-[11px] bg-[var(--coral)] text-white rounded-full px-1.5 py-0.5">{n > 9 ? "9+" : n}</i>}
           </button>); })}
       </div>
