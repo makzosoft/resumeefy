@@ -7,7 +7,7 @@ import { api, safeNext } from "@/lib/client";
 function SignupInner() {
   const router = useRouter();
   const params = useSearchParams();
-  const next = safeNext(params.get("next"), "/assessment");
+  const next = safeNext(params.get("next"), "/");
   const affiliateSignup = params.get("affiliate") === "1";
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");

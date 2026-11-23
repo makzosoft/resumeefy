@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 
-export default function ThemeToggle() {
+export default function ThemeToggle({ inline = false }: { inline?: boolean }) {
   const [dark, setDark] = useState<boolean | null>(null);
 
   useEffect(() => {
@@ -18,7 +18,7 @@ export default function ThemeToggle() {
   if (dark === null) return null;
 
   return (
-    <button type="button" onClick={toggle} className="theme-toggle-btn" aria-label={dark ? "Switch to light theme" : "Switch to dark theme"}>
+    <button type="button" onClick={toggle} className="theme-toggle-btn" style={inline ? { position: "static", width: 40, height: 40, boxShadow: "none" } : undefined} aria-label={dark ? "Switch to light theme" : "Switch to dark theme"}>
       {dark ? (
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
           <circle cx="12" cy="12" r="5" stroke="currentColor" strokeWidth="1.8" />

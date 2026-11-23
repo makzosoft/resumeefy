@@ -7,7 +7,7 @@ import { api, safeNext } from "@/lib/client";
 function LoginInner() {
   const router = useRouter();
   const params = useSearchParams();
-  const next = safeNext(params.get("next"), "/assessment");
+  const next = safeNext(params.get("next"), "/");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
@@ -53,6 +53,7 @@ function LoginInner() {
         <form onSubmit={submit} className="mt-8 space-y-4">
           <input className="input" type="email" placeholder="you@email.com" value={email} onChange={(e) => setEmail(e.target.value)} required />
           <input className="input" type="password" placeholder="Password" value={password} onChange={(e) => setPassword(e.target.value)} required />
+          <div className="text-right -mt-2"><Link href="/forgot-password" className="text-sm text-[var(--blue)] font-bold">Forgot password?</Link></div>
           {error && <p className="text-sm text-[var(--coral)]">{error}</p>}
           {needsConfirmation && (
             <p className="text-sm text-[var(--ink-soft)]">

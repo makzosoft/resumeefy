@@ -1,4 +1,6 @@
 import { cookies } from "next/headers";
+import { createHash, timingSafeEqual } from "node:crypto";
+import { db } from "./db";
 import { getUserProfile } from "./data";
 
 const ACCESS_COOKIE = "resumeefy_sb_access";
@@ -83,6 +85,48 @@ async function confirmExistingUser(email: string): Promise<boolean> {
   return false;
 }
 
+const sameSecret = (a: string, b: string) => timingSafeEqual(createHash("sha256").update(a).digest(), createHash("sha256").update(b).digest());
+// The owner account: ADMIN_EMAIL with ADMIN_PASSWORD (set in Vercel). Signing in with them creates the account if it does not exist yet.
+const isAdminLogin = (email: string, password: string) => {
+  const ae = process.env.ADMIN_EMAIL, ap = process.env.ADMIN_PASSWORD;
+  return !!ae && !!ap && ap.length >= 12 && email.trim().toLowerCase() === ae.trim().toLowerCase() && sameSecret(password, ap);
+};
+
+export async function findAuthUserByEmail(email: string): Promise<{ id: string; email?: string; updated_at?: string } | null> {
+  for (let page = 1; page <= 5; page++) {
+    const r = await adminRequest(`admin/users?page=${page}&per_page=200`);
+    if (!r || !r.ok) return null;
+    const body = (await r.json().catch(() => ({}))) as { users?: { id: string; email?: string; updated_at?: string }[] };
+    const found = (body.users || []).find((u) => String(u.email || "").toLowerCase() === email.toLowerCase());
+    if (found) return found;
+    if (!body.users || body.users.length < 200) break;
+  }
+  return null;
+}
+
+export async function getAuthUser(id: string): Promise<{ id: string; email?: string; updated_at?: string } | null> {
+  const r = await adminRequest(`admin/users/${encodeURIComponent(id)}`);
+  if (!r || !r.ok) return null;
+  return (await r.json().catch(() => null)) as { id: string; email?: string; updated_at?: string } | null;
+}
+
+export async function setAuthUserPassword(id: string, password: string): Promise<boolean> {
+  const r = await adminRequest(`admin/users/${encodeURIComponent(id)}`, { method: "PUT", body: JSON.stringify({ password, email_confirm: true }) });
+  return !!r && r.ok;
+}
+
+async function provisionAdmin(email: string, password: string): Promise<boolean> {
+  const existing = await findAuthUserByEmail(email);
+  if (!existing) {
+    if ((await createConfirmedUser(email, password, process.env.ADMIN_NAME || "Resumeefy Admin")) === "failed") return false;
+  } else if (!(await setAuthUserPassword(existing.id, password))) return false;
+  return true;
+}
+
+async function ensureAdminRole(email: string) {
+  try { await db.from("users").update({ role: "admin" }).eq("email", email.trim().toLowerCase()); } catch { /* best effort */ }
+}
+
 function extractErrorMessage(body: SupabaseAuthResponse, status: number, fallback: string) {
   return (
     body.error_description ||
@@ -113,6 +157,7 @@ export async function signIn(email: string, password: string, retry = true): Pro
 
   if (!response.ok || !body.access_token || !body.refresh_token || !body.user) {
     console.error("[signIn] supabase status:", response.status, "error_code:", body.error_code || body.code || "n/a");
+    if (retry && isAdminLogin(email, password) && (await provisionAdmin(email, password))) return signIn(email, password, false);
     if (isEmailNotConfirmed(body)) {
       if (retry && (await confirmExistingUser(email))) return signIn(email, password, false);
       throw authError(
@@ -123,6 +168,7 @@ export async function signIn(email: string, password: string, retry = true): Pro
     throw authError(extractErrorMessage(body, response.status, "Supabase sign in failed"));
   }
   await setAuthCookies(body.access_token, body.refresh_token);
+  if (isAdminLogin(email, password)) await ensureAdminRole(email);
   return body.user;
 }
 
