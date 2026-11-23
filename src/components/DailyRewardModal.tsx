@@ -14,7 +14,7 @@ function todayKey() {
 export default function DailyRewardModal() {
   const [open, setOpen] = useState(false);
   const [state, setState] = useState<"idle" | "claiming" | "claimed" | "already">("idle");
-  const [reward, setReward] = useState(1);
+  const [reward, setReward] = useState(10);
   const [flyingCoins, setFlyingCoins] = useState<{ id: number; dx: number; dy: number; delay: number }[]>([]);
   const claimBtnRef = useRef<HTMLButtonElement>(null);
 
@@ -44,7 +44,7 @@ export default function DailyRewardModal() {
         setState("already");
         return;
       }
-      setReward(r.credits ?? 1);
+      setReward(r.credits ?? 10);
 
       // Compute a flight path from the Claim button to the floating credit
       // widget so the coins visually arrive where the balance actually is.
@@ -86,7 +86,7 @@ export default function DailyRewardModal() {
         ) : state === "claimed" ? (
           <p className="daily-reward-success">+{reward} credit{reward === 1 ? "" : "s"} added!</p>
         ) : (
-          <p>You've got a small credit waiting for signing in today.</p>
+          <p>You've got 10 free credits waiting for signing in today.</p>
         )}
         {state === "idle" || state === "claiming" ? (
           <button ref={claimBtnRef} className="daily-reward-claim-btn" disabled={state === "claiming"} onClick={claim}>

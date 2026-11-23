@@ -3,6 +3,7 @@ import Link from "next/link";
 import Image from "next/image";
 import { useEffect, useRef, useState } from "react";
 import { api, CurrentUser } from "@/lib/client";
+import ThemeToggle from "@/components/ThemeToggle";
 
 type NavLink = { href: string; label: string; blurb: string };
 type NavGroup = { label: string; items: NavLink[] };
@@ -107,6 +108,7 @@ export default function Nav() {
         </nav>
 
         <div className="nav-actions">
+          <ThemeToggle inline />
           {!loaded ? null : user ? (
             <>
               <Link href="/shop" className="nav-greeting">

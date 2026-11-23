@@ -6,6 +6,7 @@ import { z } from "zod";
 import { getCurrentSession } from "@/lib/auth";
 import { CREDIT_COSTS, addCredits, saveCourse, spendCredits, trackEvent } from "@/lib/data";
 import { validateResumeCopy } from "@/lib/resume-rules";
+import { buildResumeWithoutAi } from "@/lib/resume-fallback";
 import {
   evaluateInterviewAnswer,
   generateBlog,
@@ -154,7 +155,15 @@ export async function POST(req: NextRequest) {
       const p = resumeSchema.safeParse(body);
       if (!p.success) return NextResponse.json({ error: "Invalid resume data" }, { status: 400 });
       await chargeFor(CREDIT_COSTS.resume_ai, "resume_ai");
-      return NextResponse.json(await generateResumeChecked(p.data));
+      try {
+        return NextResponse.json(await generateResumeChecked(p.data));
+      } catch (aiError) {
+        // The AI is busy or out of quota: refund and still give the person a resume built from their own words.
+        console.warn("[ai:resume] AI failed, using the built in writer:", (aiError as Error)?.message);
+        await addCredits(session!.sub, chargedAmount, "refund", "ai_failed").catch(() => {});
+        chargedAmount = 0;
+        return NextResponse.json({ ...buildResumeWithoutAi(p.data.resume), fallback: true });
+      }
     }
 
     if (action === "resume_quality") {
