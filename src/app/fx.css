@@ -1,0 +1,32 @@
+/* Certificate celebration, certificate cards and credit award effects. Loaded on every page. */
+.cert-backdrop{position:fixed;inset:0;z-index:120;background:rgba(3,10,25,.72);backdrop-filter:blur(5px);display:grid;place-items:center;padding:16px;overflow:auto;animation:fadeInBackdrop .2s ease}
+.cert-confetti{position:fixed;inset:0;width:100%;height:100%;pointer-events:none;z-index:121}
+.cert-modal{position:relative;z-index:122;width:100%;max-width:760px;margin:auto;padding:clamp(18px,3vw,28px);border-radius:26px;background:var(--paper,#fff);color:var(--ink,#000B1D);box-shadow:0 40px 90px -30px rgba(0,20,60,.7);animation:newsletterPop .35s cubic-bezier(.2,.8,.3,1.1)}
+.cert-modal h2{font-size:clamp(1.4rem,3.4vw,2rem);font-weight:800;letter-spacing:-.02em}
+.cert-modal p{margin:6px 0 14px;font-size:.95rem;opacity:.75;line-height:1.5}
+.cert-canvas{display:block;width:100%;height:auto;border-radius:12px;box-shadow:0 18px 40px -22px rgba(0,11,29,.5);background:#fff}
+.cert-actions{margin-top:14px}
+.cert-row{display:flex;flex-wrap:wrap;gap:8px}
+.cert-btn{display:inline-flex;align-items:center;justify-content:center;min-height:44px;padding:0 16px;border-radius:12px;border:1.5px solid rgba(120,130,160,.45);background:transparent;color:inherit;font:800 14px "DM Sans",sans-serif;cursor:pointer;text-decoration:none;transition:transform .18s ease,background .18s}
+.cert-btn:hover{transform:translateY(-2px)}
+.cert-btn.sm{min-height:38px;padding:0 12px;font-size:13px}
+.cert-btn.primary{background:#0A2FCC;border-color:#0A2FCC;color:#fff}
+.cert-btn.li{background:#0A66C2;border-color:#0A66C2;color:#fff}
+.cert-note{margin:10px 0 0!important;font-weight:700;color:#12a77b;opacity:1!important}
+.cert-list{display:grid;gap:12px;margin-top:16px}
+.cert-item{padding:14px;border-radius:18px;background:var(--lp-paper,#F3F6FD);display:grid;gap:10px}
+.cert-item-top{display:flex;align-items:center;gap:12px}
+.cert-item-top>div{flex:1;min-width:0}
+.cert-item-top b{display:block;font-size:1rem;overflow-wrap:anywhere}
+.cert-item-top span{display:block;margin-top:2px;font-size:.78rem;opacity:.65;overflow-wrap:anywhere}
+.cert-medal{flex:0 0 42px;height:42px;border-radius:13px;display:grid;place-items:center;font-size:22px;background:#FFD700}
+.cert-hero{background:#0A2FCC;color:#fff;padding:clamp(32px,6vw,64px) 0 clamp(60px,8vw,90px)}
+.cert-hero h1{font-size:clamp(1.8rem,5vw,3.2rem);max-width:22ch}
+.cert-hero p{margin-top:12px;color:rgba(255,255,255,.85)}
+.cert-verified{display:inline-block;margin-bottom:14px;padding:6px 14px;border-radius:99px;background:rgba(18,167,123,.25);color:#fff;font-size:12.5px;font-weight:800}
+.cert-page{margin-top:clamp(-56px,-6vw,-40px);position:relative;z-index:1;padding-bottom:clamp(40px,7vw,80px)}
+.cert-frame{padding:clamp(8px,2vw,16px);border-radius:22px;background:var(--lp-card,#fff);border:1px solid var(--lp-line,#dbe3f0)}
+.cert-cta{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:14px;margin-top:22px;padding:20px 22px;border-radius:22px;background:#000B1D;color:#fff}
+.cert-cta span{display:block;margin-top:4px;font-size:.9rem;color:rgba(255,255,255,.78);max-width:46ch}
+.uh-bump{animation:uhBump .35s ease}
+@keyframes uhBump{40%{transform:scale(1.18)}}
