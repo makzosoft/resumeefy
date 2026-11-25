@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { baseUrl } from "@/lib/site";
 import "./globals.css";
+import "./fx.css";
 import Nav from "@/components/Nav";
 import ReferralCapture from "@/components/ReferralCapture";
 import CreditGate from "@/components/CreditGate";
@@ -8,7 +9,8 @@ import AiUnavailableBanner from "@/components/AiUnavailableBanner";
 import NewsletterModal from "@/components/NewsletterModal";
 import FloatingCreditWidget from "@/components/FloatingCreditWidget";
 import DailyRewardModal from "@/components/DailyRewardModal";
-import ThemeToggle from "@/components/ThemeToggle";
+import CreditAwardFx from "@/components/CreditAwardFx";
+import CertificateCelebration from "@/components/CertificateCelebration";
 import { SpeedInsights } from "@vercel/speed-insights/next";
 import { Analytics } from "@vercel/analytics/next";
 
@@ -87,6 +89,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <NewsletterModal />
         <FloatingCreditWidget />
         <DailyRewardModal />
+        <CreditAwardFx />
+        <CertificateCelebration />
         <SpeedInsights />
         <Analytics />
       </body>
