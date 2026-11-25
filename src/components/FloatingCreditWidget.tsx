@@ -1,8 +1,9 @@
 "use client";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { api, CurrentUser } from "@/lib/client";
 import { CreditCoin } from "@/components/CreditCoin";
+import { useCreditEvents } from "@/components/useCreditEvents";
 
 export default function FloatingCreditWidget() {
   const router = useRouter();
@@ -22,21 +23,14 @@ export default function FloatingCreditWidget() {
     function onSignedIn() {
       api<{ balance: number }>("/api/payment?action=balance").then((x) => setBalance(x.balance)).catch(() => {});
     }
-    function onCreditsUpdated(e: Event) {
-      const detail = (e as CustomEvent<{ balance: number }>).detail;
-      if (typeof detail?.balance === "number") {
-        setBalance(detail.balance);
-        setPulse(true);
-        window.setTimeout(() => setPulse(false), 700);
-      }
-    }
     window.addEventListener("resumeefy:signed-in", onSignedIn);
-    window.addEventListener("resumeefy:credits-updated", onCreditsUpdated as EventListener);
     return () => {
       window.removeEventListener("resumeefy:signed-in", onSignedIn);
-      window.removeEventListener("resumeefy:credits-updated", onCreditsUpdated as EventListener);
     };
   }, []);
+
+  const onBump = useCallback(() => { setPulse(true); window.setTimeout(() => setPulse(false), 450); }, []);
+  useCreditEvents(setBalance, onBump);
 
   if (!user || balance === null) return null;
 

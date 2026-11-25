@@ -1,9 +1,10 @@
 "use client";
 import Link from "next/link";
 import Image from "next/image";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { api, CurrentUser } from "@/lib/client";
 import ThemeToggle from "@/components/ThemeToggle";
+import { useCreditEvents } from "@/components/useCreditEvents";
 
 type NavLink = { href: string; label: string; blurb: string };
 type NavGroup = { label: string; items: NavLink[] };
@@ -76,6 +77,9 @@ export default function Nav() {
     if (user) api<{ balance: number }>("/api/payment?action=balance").then((r) => setCredits(r.balance)).catch(() => {});
   }, [user]);
 
+  const noop = useCallback(() => {}, []);
+  useCreditEvents(setCredits, noop);
+
   useEffect(() => {
     document.body.style.overflow = open ? "hidden" : "";
     return () => {
@@ -111,7 +115,7 @@ export default function Nav() {
           <ThemeToggle inline />
           {!loaded ? null : user ? (
             <>
-              <Link href="/shop" className="nav-greeting">
+              <Link href="/shop" className="nav-greeting" id="nav-credits-anchor">
                 {credits === null ? "Credits" : `${credits} credits`} · Shop
               </Link>
               <span className="nav-greeting">Hi, {user.name.split(" ")[0]}</span>

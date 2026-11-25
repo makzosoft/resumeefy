@@ -1,5 +1,8 @@
 import Link from "next/link";
 import SiteFooter from "@/components/SiteFooter";
+import HomeWallet from "@/components/HomeWallet";
+import CertificateList from "@/components/CertificateList";
+import { getUserCertificates } from "@/lib/certificates";
 import { CREDIT_COSTS } from "@/lib/credit-costs";
 import { getCourseCertificates, getCourses, getCreditBalance, getLatestResume, getUserAssessments, getUserInviteProfile } from "@/lib/data";
 import type { SessionPayload } from "@/lib/auth";
@@ -32,13 +35,14 @@ const when = (d?: string | null) => {
 
 export default async function UserHome({ session }: { session: SessionPayload }) {
   const id = session.sub;
-  const [wallet, assessments, resume, courses, certs, invite] = await Promise.all([
+  const [wallet, assessments, resume, courses, certs, invite, certInfos] = await Promise.all([
     getCreditBalance(id).catch(() => null),
     getUserAssessments(id).catch(() => [] as any[]),
     getLatestResume(id).catch(() => undefined),
     getCourses(id).catch(() => [] as any[]),
     getCourseCertificates(id).catch(() => [] as any[]),
     getUserInviteProfile(id).catch(() => undefined),
+    getUserCertificates(id, session.name || "").catch(() => []),
   ]);
 
   const first = (session.name || "").split(" ")[0] || "there";
@@ -72,7 +76,7 @@ export default async function UserHome({ session }: { session: SessionPayload })
             <p>{doneN === steps.length ? "You have done the full path. Keep practising to stay sharp." : "Pick up where you left off or start something new. Everything you need is below."}</p>
           </div>
           <div className="uh-wallet">
-            <div><b>{wallet ? wallet.balance : "-"}</b><span>credits available</span></div>
+            <div><HomeWallet initial={wallet ? wallet.balance : null} /><span>credits available</span></div>
             <Link href="/shop" className="uh-btn">Get credits</Link>
           </div>
         </div>
@@ -106,6 +110,12 @@ export default async function UserHome({ session }: { session: SessionPayload })
               </Link>
             ))}
           </div>
+        </section>
+
+        <section className="uh-card" id="certificates">
+          <h2>Your certificates</h2>
+          <p className="uh-sub">{certInfos.length ? "View, download or share any certificate whenever you like. Sharing on LinkedIn also tells people about Resumeefy." : "Finish a course to earn your first certificate. You can download it and share it on LinkedIn."}</p>
+          {certInfos.length ? <CertificateList certs={certInfos} /> : <Link href="/courses" className="uh-btn blue" style={{ marginTop: 14 }}>Browse courses</Link>}
         </section>
 
         <div className="uh-row">

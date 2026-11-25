@@ -15,7 +15,6 @@ export default function DailyRewardModal() {
   const [open, setOpen] = useState(false);
   const [state, setState] = useState<"idle" | "claiming" | "claimed" | "already">("idle");
   const [reward, setReward] = useState(10);
-  const [flyingCoins, setFlyingCoins] = useState<{ id: number; dx: number; dy: number; delay: number }[]>([]);
   const claimBtnRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
@@ -46,28 +45,11 @@ export default function DailyRewardModal() {
       }
       setReward(r.credits ?? 10);
 
-      // Compute a flight path from the Claim button to the floating credit
-      // widget so the coins visually arrive where the balance actually is.
-      const target = document.getElementById("credit-widget-anchor");
-      const btn = claimBtnRef.current;
-      if (target && btn) {
-        const from = btn.getBoundingClientRect();
-        const to = target.getBoundingClientRect();
-        const coins = Array.from({ length: 6 }, (_, i) => ({
-          id: i,
-          dx: to.left + to.width / 2 - (from.left + from.width / 2),
-          dy: to.top + to.height / 2 - (from.top + from.height / 2),
-          delay: i * 70,
-        }));
-        setFlyingCoins(coins);
-      }
+      // Coins fly from the button to the credit total, which counts up as each one lands.
+      const from = claimBtnRef.current?.getBoundingClientRect();
+      window.dispatchEvent(new CustomEvent("resumeefy:credits-award", { detail: { amount: r.credits ?? 10, balance: r.balance ?? 0, from } }));
       setState("claimed");
-      window.setTimeout(() => {
-        if (typeof r.balance === "number") {
-          window.dispatchEvent(new CustomEvent("resumeefy:credits-updated", { detail: { balance: r.balance } }));
-        }
-      }, 750);
-      window.setTimeout(() => setOpen(false), 1500);
+      window.setTimeout(() => setOpen(false), 2200);
     } catch {
       setOpen(false);
     }
@@ -97,15 +79,6 @@ export default function DailyRewardModal() {
             Nice, thanks!
           </button>
         )}
-        {flyingCoins.map((c) => (
-          <span
-            key={c.id}
-            className="daily-reward-flying-coin"
-            style={{ ["--dx" as string]: `${c.dx}px`, ["--dy" as string]: `${c.dy}px`, animationDelay: `${c.delay}ms` }}
-          >
-            <CreditCoin size={18} />
-          </span>
-        ))}
       </div>
     </div>
   );

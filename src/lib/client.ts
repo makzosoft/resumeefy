@@ -26,6 +26,9 @@ export async function api<T = unknown>(path: string, opts: RequestInit = {}): Pr
     // instead of matching on message text.
     throw Object.assign(new Error(data.error || "Something went wrong"), { code: data.code, status: res.status });
   }
+  if (typeof window !== "undefined" && json && typeof (json as { certificateId?: unknown }).certificateId === "string") {
+    window.dispatchEvent(new CustomEvent("resumeefy:certificate-awarded", { detail: { id: (json as { certificateId: string }).certificateId } }));
+  }
   return json as T;
 }
 
