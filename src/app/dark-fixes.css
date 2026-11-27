@@ -1,0 +1,68 @@
+/* Dark theme contrast fixes, and things that only make sense for visitors and learners (hidden for the admin account). */
+
+/* Buttons that used the ink colour as a background (which turns light in dark mode) with white text */
+[data-theme="dark"] .btn-primary,
+[data-theme="dark"] .btn-sm,
+[data-theme="dark"] .lesson-narrator-btn,
+[data-theme="dark"] .promo-newsletter-form button,
+[data-theme="dark"] .assessment-step.done span,
+[data-theme="dark"] [class*="bg-[var(--blue)]"]:not([class*="bg-[var(--blue)]/"]) { background:#3A64F0; color:#fff; border-color:#3A64F0; }
+[data-theme="dark"] [class*="bg-[var(--ink)]"] { background:#13264f; color:#fff; }
+[data-theme="dark"] [class*="bg-[var(--coral)]"] { background:#e64d63; }
+[data-theme="dark"] .nav-button-ghost { background:transparent; border-color:var(--line); color:var(--ink); }
+
+/* White boxes and light answer states that kept dark or light text */
+[data-theme="dark"] .bg-white { background:var(--paper-dim); color:var(--ink); }
+[data-theme="dark"] .ai-coach-mini { background:var(--paper-dim); color:var(--ink); }
+[data-theme="dark"] .assessment-option.correct,
+[data-theme="dark"] .assessment-option.picked { background:rgba(47,208,242,.14); border-color:var(--mint); }
+[data-theme="dark"] .assessment-option.wrong { background:rgba(255,122,142,.14); border-color:var(--coral); }
+
+/* Hard coded dark text colours that disappeared on dark backgrounds */
+[data-theme="dark"] [class*="text-[#0A2FCC]"] { color:#8fadff; }
+[data-theme="dark"] [class*="text-[#087a9b]"] { color:#5fd4ee; }
+[data-theme="dark"] [class*="text-[#0a7f73]"] { color:#3fd9b8; }
+[data-theme="dark"] [class*="text-[#8b7100]"] { color:#ffd75e; }
+
+/* The desktop simulation windows are light on purpose, so give everything inside them the light theme values */
+[data-theme="dark"] .dsim-window,
+[data-theme="dark"] .slides-layout-card,
+[data-theme="dark"] .design-template-card,
+[data-theme="dark"] .search-result,
+[data-theme="dark"] .mail-row {
+  --ink:#000B1D; --ink-soft:#5d6b85; --paper:#F3F6FD; --paper-dim:#e8eef9; --line:#dbe3f0; --blue:#0A2FCC; --blue-dim:#e7edff; --coral:#e64d63; --mint:#00a9d9;
+  color:#000B1D;
+}
+
+/* Landing, partner, contact, home and certificate pages: accents that were too dark on dark cards */
+[data-theme="dark"] .lp-m i::after,
+[data-theme="dark"] .pt-chart i { background:#5B8CFF; }
+[data-theme="dark"] .pt-chart i.s { background:var(--lp-gold); }
+[data-theme="dark"] .lp .lp-tool.is-done:hover,
+[data-theme="dark"] .uh-tool:hover,
+[data-theme="dark"] .uh-step:hover,
+[data-theme="dark"] .ct-link:hover { border-color:#5B8CFF; }
+[data-theme="dark"] .ct-in:focus,
+[data-theme="dark"] .pt-in:focus { border-color:#5B8CFF; box-shadow:0 0 0 4px rgba(91,140,255,.28); }
+[data-theme="dark"] .lp-panel.blue,
+[data-theme="dark"] .uh-invite { background:#0c1b3d; border:1px solid #1e335f; }
+[data-theme="dark"] .lp-ico.ink,
+[data-theme="dark"] .uh-ico.ink { background:#1b2e5c; }
+[data-theme="dark"] .lp-ico:not(.gold):not(.ink),
+[data-theme="dark"] .uh-ico:not(.gold):not(.ink),
+[data-theme="dark"] .lp-no,
+[data-theme="dark"] .pt-btn:not(.ghost):not(.gold),
+[data-theme="dark"] .pt-tabs button.on,
+[data-theme="dark"] .lp-form button,
+[data-theme="dark"] .lp-b.a,
+[data-theme="dark"] .ct-send,
+[data-theme="dark"] .uh-btn.blue,
+[data-theme="dark"] .cert-btn.primary { background:#3A64F0; border-color:#3A64F0; color:#fff; }
+[data-theme="dark"] .lp-step.is-in .lp-no { background:#3A64F0; color:#fff; }
+[data-theme="dark"] .cert-item { background:var(--paper-dim); }
+[data-theme="dark"] .cert-btn { border-color:var(--line); }
+
+/* The admin account is for managing the site, so learner things are hidden for it */
+html[data-role="admin"] .credit-widget,
+html[data-role="admin"] .daily-reward-backdrop,
+html[data-role="admin"] .newsletter-modal-backdrop { display:none !important; }

@@ -77,6 +77,11 @@ export default function Nav() {
     if (user) api<{ balance: number }>("/api/payment?action=balance").then((r) => setCredits(r.balance)).catch(() => {});
   }, [user]);
 
+  useEffect(() => {
+    document.documentElement.dataset.role = user?.role || "";
+  }, [user]);
+
+  const isAdmin = user?.role === "admin";
   const noop = useCallback(() => {}, []);
   useCreditEvents(setCredits, noop);
 
@@ -96,28 +101,39 @@ export default function Nav() {
   return (
     <header className="site-nav">
       <div className="nav-inner">
-        <Link href="/" aria-label="Resumeefy home" className="brand-lockup" onClick={() => setOpen(false)}>
+        <Link href={isAdmin ? "/admin" : "/"} aria-label="Resumeefy home" className="brand-lockup" onClick={() => setOpen(false)}>
           <Image src="/brand/resumeefy-wordmark.png" alt="Resumeefy" width={174} height={40} priority />
         </Link>
 
         <nav aria-label="Primary navigation" className="desktop-nav">
-          <Link href="/assessment" className="nav-flagship">
-            Interview Prep
-          </Link>
-          <NavDropdown group={TOOLS_GROUP} />
-          <Link href="/courses">Courses</Link>
-          <Link href="/blog">Blog</Link>
-          {user?.role === "admin" && <Link href="/admin">Admin</Link>}
-          {user?.role === "admin" && <Link href="/admin/partners">Partners</Link>}
+          {isAdmin ? (
+            <>
+              <a href="/admin" className="nav-flagship">Dashboard</a>
+              <a href="/admin?tab=messages">Messages</a>
+              <a href="/admin?tab=users">Users</a>
+              <Link href="/admin/partners">Partners</Link>
+            </>
+          ) : (
+            <>
+              <Link href="/assessment" className="nav-flagship">
+                Interview Prep
+              </Link>
+              <NavDropdown group={TOOLS_GROUP} />
+              <Link href="/courses">Courses</Link>
+              <Link href="/blog">Blog</Link>
+            </>
+          )}
         </nav>
 
         <div className="nav-actions">
           <ThemeToggle inline />
           {!loaded ? null : user ? (
             <>
-              <Link href="/shop" className="nav-greeting" id="nav-credits-anchor">
-                {credits === null ? "Credits" : `${credits} credits`} · Shop
-              </Link>
+              {!isAdmin && (
+                <Link href="/shop" className="nav-greeting" id="nav-credits-anchor">
+                  {credits === null ? "Credits" : `${credits} credits`} · Shop
+                </Link>
+              )}
               <span className="nav-greeting">Hi, {user.name.split(" ")[0]}</span>
               <button type="button" onClick={logout} className="nav-button nav-button-ghost">
                 Log out
@@ -149,34 +165,43 @@ export default function Nav() {
 
       <div className={`mobile-menu ${open ? "is-open" : ""}`} aria-hidden={!open}>
         <div className="mobile-menu-inner">
-          <Link href="/assessment" onClick={() => setOpen(false)}>
-            Interview Prep <span>↗</span>
-          </Link>
-          {TOOLS_GROUP.items.map((item) => (
-            <Link key={item.href} href={item.href} onClick={() => setOpen(false)}>
-              {item.label} <span>↗</span>
-            </Link>
-          ))}
-          <Link href="/courses" onClick={() => setOpen(false)}>
-            Courses <span>↗</span>
-          </Link>
-          <Link href="/blog" onClick={() => setOpen(false)}>
-            Blog <span>↗</span>
-          </Link>
-          {user && (
-            <Link href="/shop" onClick={() => setOpen(false)}>
-              Credits & Shop <span>↗</span>
-            </Link>
-          )}
-          {user?.role === "admin" && (
-            <Link href="/admin" onClick={() => setOpen(false)}>
-              Admin <span>↗</span>
-            </Link>
-          )}
-          {user?.role === "admin" && (
-            <Link href="/admin/partners" onClick={() => setOpen(false)}>
-              Partners <span>↗</span>
-            </Link>
+          {isAdmin ? (
+            <>
+              <a href="/admin" onClick={() => setOpen(false)}>
+                Dashboard <span>↗</span>
+              </a>
+              <a href="/admin?tab=messages" onClick={() => setOpen(false)}>
+                Messages <span>↗</span>
+              </a>
+              <a href="/admin?tab=users" onClick={() => setOpen(false)}>
+                Users <span>↗</span>
+              </a>
+              <Link href="/admin/partners" onClick={() => setOpen(false)}>
+                Partners <span>↗</span>
+              </Link>
+            </>
+          ) : (
+            <>
+              <Link href="/assessment" onClick={() => setOpen(false)}>
+                Interview Prep <span>↗</span>
+              </Link>
+              {TOOLS_GROUP.items.map((item) => (
+                <Link key={item.href} href={item.href} onClick={() => setOpen(false)}>
+                  {item.label} <span>↗</span>
+                </Link>
+              ))}
+              <Link href="/courses" onClick={() => setOpen(false)}>
+                Courses <span>↗</span>
+              </Link>
+              <Link href="/blog" onClick={() => setOpen(false)}>
+                Blog <span>↗</span>
+              </Link>
+              {user && (
+                <Link href="/shop" onClick={() => setOpen(false)}>
+                  Credits & Shop <span>↗</span>
+                </Link>
+              )}
+            </>
           )}
           {!user && loaded && (
             <Link href="/login" onClick={() => setOpen(false)}>

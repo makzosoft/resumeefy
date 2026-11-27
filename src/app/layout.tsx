@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { baseUrl } from "@/lib/site";
 import "./globals.css";
 import "./fx.css";
+import "./dark-fixes.css";
 import Nav from "@/components/Nav";
 import ReferralCapture from "@/components/ReferralCapture";
 import CreditGate from "@/components/CreditGate";
